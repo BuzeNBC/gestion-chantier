@@ -1,8 +1,5 @@
 {
-    "builds": [
-      {
-        "src": "package.json",
-        "use": "@vercel/node"
-      }
-    ]
+    "framework": "create-react-app",
+    "buildCommand": "npm run build",
+    "outputDirectory": "build"
   }
