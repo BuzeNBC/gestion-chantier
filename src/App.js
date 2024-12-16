@@ -290,6 +290,16 @@ function AdminDashboard() {
   const [userRole, setUserRole] = useState('worker');
   const [showLoginModal, setShowLoginModal] = useState(false);
 
+  // Ajoutez ce useEffect pour le débogage
+   useEffect(() => {
+    console.log('Application démarrée');
+    // Vérifiez si vos services sont chargés
+    console.log('Services disponibles:', {
+      auth: !!signIn,
+      db: !!DBService
+    });
+  }, []);
+
   const handleRoleChange = (role) => {
     setUserRole(role);
     setShowLoginModal(false);
