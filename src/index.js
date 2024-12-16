@@ -2,17 +2,16 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
-import reportWebVitals from './reportWebVitals';
 
-// Ajout d'un test visuel
-console.log('Script de démarrage exécuté');
-document.body.innerHTML += '<div>Test de chargement</div>';
+const rootElement = document.getElementById('root');
+console.log('Root element:', rootElement);
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
+const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <App />
+    <div style={{padding: '20px', fontSize: '24px'}}>
+      Test d'affichage basique
+      <App />
+    </div>
   </React.StrictMode>
 );
-
-reportWebVitals();
