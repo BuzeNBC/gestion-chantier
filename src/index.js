@@ -2,16 +2,23 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
+import reportWebVitals from './reportWebVitals';
 
-const rootElement = document.getElementById('root');
-console.log('Root element:', rootElement);
+console.log('Application en cours de démarrage');
 
-const root = ReactDOM.createRoot(rootElement);
-root.render(
-  <React.StrictMode>
-    <div style={{padding: '20px', fontSize: '24px'}}>
-      Test d'affichage basique
+try {
+  const root = ReactDOM.createRoot(document.getElementById('root'));
+  console.log('Root trouvé, tentative de rendu...');
+  
+  root.render(
+    <React.StrictMode>
       <App />
-    </div>
-  </React.StrictMode>
-);
+    </React.StrictMode>
+  );
+  
+  console.log('Rendu terminé avec succès');
+} catch (error) {
+  console.error('Erreur lors du rendu:', error);
+}
+
+reportWebVitals();
