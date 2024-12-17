@@ -1,6 +1,4 @@
 import React, { useState, useEffect, memo } from 'react';
-// Ajoutez ces imports avec les existants
-import { Calendar, Clock, Filter, ChevronDown } from 'lucide-react';
 import { 
   Plus, 
   Edit, 
@@ -9,7 +7,9 @@ import {
   Search, 
   X, 
   CheckCircle, 
-  AlertCircle 
+  AlertCircle,
+  Filter,    // Ajouté
+  ChevronDown // Ajouté
 } from 'lucide-react';
 import { DBService, compressImage, STORES } from '../services/dbService';
 
@@ -45,40 +45,54 @@ const SearchBar = memo(({ searchTerm, onSearchChange }) => (
 ));
 
 const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
-  const [selectedTrade, setSelectedTrade] = useState('');
-  const [selectedTask, setSelectedTask] = useState('');
-  const [customTask, setCustomTask] = useState('');
-  const [isCustomTask, setIsCustomTask] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedRoom, setSelectedRoom] = useState('');
+  const [formData, setFormData] = useState({
+    selectedTrade: '',
+    selectedTask: '',
+    customTask: '',
+    isCustomTask: false,
+    searchTerm: '',
+    selectedRoom: '',
+    measureType: 'square_meters', // square_meters, units, fixed_price
+    quantity: ''
+  });
   
   const defaultRooms = [
     'Salon', 'Cuisine', 'Salle de bain', 'Chambre 1', 'Chambre 2', 
     'WC', 'Entrée', 'Garage', 'Extérieur', 'Cave', 'Buanderie'
   ];
 
-  // Filtrer les tâches basées sur la recherche
   const filteredTasks = trades.find(trade => 
-    trade.id.toString() === selectedTrade
+    trade.id.toString() === formData.selectedTrade
   )?.tasks.filter(task => 
-    task.toLowerCase().includes(searchTerm.toLowerCase())
+    task.toLowerCase().includes(formData.searchTerm.toLowerCase())
   ) || [];
 
   const handleSubmit = () => {
-    const taskDescription = isCustomTask ? customTask : selectedTask;
+    const taskDescription = formData.isCustomTask ? formData.customTask : formData.selectedTask;
     
-    if (!selectedTrade || !taskDescription || !selectedRoom) {
-      alert('Veuillez remplir tous les champs');
+    if (!formData.selectedTrade || !taskDescription || !formData.selectedRoom) {
+      alert('Veuillez remplir tous les champs obligatoires');
       return;
     }
 
-    onSubmit({
+    const taskData = {
       description: taskDescription,
-      tradeId: selectedTrade,
-      room: selectedRoom,
+      tradeId: formData.selectedTrade,
+      room: formData.selectedRoom,
       completed: false,
-      isCustom: isCustomTask
-    });
+      isCustom: formData.isCustomTask,
+      measureType: formData.measureType,
+      quantity: formData.measureType !== 'fixed_price' ? parseFloat(formData.quantity) : null
+    };
+
+    onSubmit(taskData);
+  };
+
+  const handleInputChange = (name, value) => {
+    setFormData(prev => ({
+      ...prev,
+      [name]: value
+    }));
   };
 
   return (
@@ -88,11 +102,8 @@ const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
         <label className="block text-sm font-medium mb-1">Corps d'état</label>
         <select
           className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-          value={selectedTrade}
-          onChange={(e) => {
-            setSelectedTrade(e.target.value);
-            setSelectedTask('');
-          }}
+          value={formData.selectedTrade}
+          onChange={(e) => handleInputChange('selectedTrade', e.target.value)}
         >
           <option value="">Sélectionner un corps d'état</option>
           {trades.map(trade => (
@@ -101,13 +112,27 @@ const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
         </select>
       </div>
 
+      {/* Type de mesure */}
+      <div>
+        <label className="block text-sm font-medium mb-1">Type de mesure</label>
+        <select
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+          value={formData.measureType}
+          onChange={(e) => handleInputChange('measureType', e.target.value)}
+        >
+          <option value="square_meters">Mètres carrés (m²)</option>
+          <option value="units">Unités</option>
+          <option value="fixed_price">Forfait</option>
+        </select>
+      </div>
+
       {/* Sélection de la pièce */}
       <div>
         <label className="block text-sm font-medium mb-1">Pièce</label>
         <select
           className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-          value={selectedRoom}
-          onChange={(e) => setSelectedRoom(e.target.value)}
+          value={formData.selectedRoom}
+          onChange={(e) => handleInputChange('selectedRoom', e.target.value)}
         >
           <option value="">Sélectionner une pièce</option>
           {defaultRooms.map(room => (
@@ -116,20 +141,20 @@ const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
         </select>
       </div>
 
-      {/* Recherche de tâches */}
-      {!isCustomTask && selectedTrade && (
+      {/* Quantité (pour m² et unités) */}
+      {formData.measureType !== 'fixed_price' && (
         <div>
-          <label className="block text-sm font-medium mb-1">Rechercher une tâche</label>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
-            <input
-              type="text"
-              placeholder="Rechercher..."
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
+          <label className="block text-sm font-medium mb-1">
+            {formData.measureType === 'square_meters' ? 'Surface en m²' : 'Nombre d\'unités'}
+          </label>
+          <input
+            type="number"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+            value={formData.quantity}
+            onChange={(e) => handleInputChange('quantity', e.target.value)}
+            min="0"
+            step={formData.measureType === 'square_meters' ? "0.01" : "1"}
+          />
         </div>
       )}
 
@@ -138,15 +163,15 @@ const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
         <input
           type="checkbox"
           id="custom-task"
-          checked={isCustomTask}
+          checked={formData.isCustomTask}
           onChange={(e) => {
-            setIsCustomTask(e.target.checked);
-            if (e.target.checked) {
-              setSelectedTask('');
-              setSearchTerm('');
-            } else {
-              setCustomTask('');
-            }
+            setFormData(prev => ({
+              ...prev,
+              isCustomTask: e.target.checked,
+              selectedTask: '',
+              searchTerm: '',
+              customTask: e.target.checked ? prev.customTask : ''
+            }));
           }}
           className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
         />
@@ -155,7 +180,7 @@ const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
         </label>
       </div>
 
-      {isCustomTask ? (
+      {formData.isCustomTask ? (
         <div>
           <label className="block text-sm font-medium mb-1">
             Description de la nouvelle tâche
@@ -163,28 +188,48 @@ const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
           <input
             type="text"
             className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-            value={customTask}
-            onChange={(e) => setCustomTask(e.target.value)}
+            value={formData.customTask}
+            onChange={(e) => handleInputChange('customTask', e.target.value)}
             placeholder="Entrez la description de la tâche"
           />
         </div>
       ) : (
-        <div>
-          <label className="block text-sm font-medium mb-1">
-            Tâche prédéfinie
-          </label>
-          <select
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-            value={selectedTask}
-            onChange={(e) => setSelectedTask(e.target.value)}
-            disabled={!selectedTrade}
-          >
-            <option value="">Sélectionner une tâche</option>
-            {filteredTasks.map((task, index) => (
-              <option key={index} value={task}>{task}</option>
-            ))}
-          </select>
-        </div>
+        <>
+          {/* Recherche de tâches */}
+          {formData.selectedTrade && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Rechercher une tâche</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-5 w-5" />
+                <input
+                  type="text"
+                  placeholder="Rechercher..."
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg"
+                  value={formData.searchTerm}
+                  onChange={(e) => handleInputChange('searchTerm', e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Sélection de la tâche */}
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Tâche prédéfinie
+            </label>
+            <select
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+              value={formData.selectedTask}
+              onChange={(e) => handleInputChange('selectedTask', e.target.value)}
+              disabled={!formData.selectedTrade}
+            >
+              <option value="">Sélectionner une tâche</option>
+              {filteredTasks.map((task, index) => (
+                <option key={index} value={task}>{task}</option>
+              ))}
+            </select>
+          </div>
+        </>
       )}
 
       {/* Boutons d'action */}

@@ -59,102 +59,105 @@ function WorkerInterface() {
     loadData();
   }, []);
 
-  const handlePhotoCapture = async (siteId, taskId, photoFile) => {
-    if (!photoFile || !(photoFile instanceof Blob)) {
-      alert('Veuillez prendre une photo valide');
-      return;
-    }
+  // Remplacer la fonction handlePhotoCapture actuelle (vers la ligne 85) par :
+const handleFirstPhotoAndComplete = async (siteId, taskId, photoFile) => {
+  if (!photoFile || !(photoFile instanceof Blob)) {
+    alert('Veuillez prendre une photo valide');
+    return;
+  }
 
-    try {
-      setIsLoading(true);
-      const photoId = `${Date.now()}-${Date.now() + 4880}`;
-      const fileName = `${photoId}.jpg`;
+  try {
+    setIsLoading(true);
+    const photoId = `${Date.now()}-${Date.now() + 4880}`;
+    const fileName = `${photoId}.jpg`;
 
-      let fileToUpload = photoFile;
-      if (photoFile.type !== 'image/jpeg') {
-        const img = new Image();
-        const canvas = document.createElement('canvas');
-        
-        await new Promise((resolve, reject) => {
-          img.onload = resolve;
-          img.onerror = reject;
-          img.src = URL.createObjectURL(photoFile);
-        });
-
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-
-        fileToUpload = await new Promise(resolve => {
-          canvas.toBlob(resolve, 'image/jpeg', 0.9);
-        });
-      }
-
-      const { data, error } = await supabase.storage
-        .from('photos')
-        .upload(`public/photos/${fileName}`, fileToUpload, {
-          contentType: 'image/jpeg',
-          upsert: true,
-          cacheControl: '3600'
-        });
-
-      if (error) {
-        console.error('Erreur upload Supabase:', error);
-        throw error;
-      }
-
-      const { data: { publicUrl } } = supabase.storage
-        .from('photos')
-        .getPublicUrl(`public/photos/${fileName}`);
-
-      // Mettre à jour l'état local immédiatement
-      const updatedSites = sites.map(site => {
-        if (site.id === siteId) {
-          const updatedSite = {
-            ...site,
-            tasks: site.tasks.map(task => {
-              if (task.id === taskId) {
-                return {
-                  ...task,
-                  completed: true,
-                  photoId: photoId,
-                  photoUrl: publicUrl,
-                  completedAt: new Date().toISOString(),
-                  completedBy: 'worker_id'
-                };
-              }
-              return task;
-            })
-          };
-          // Mettre à jour selectedSite si c'est le site actuel
-          if (selectedSite && selectedSite.id === siteId) {
-            setSelectedSite(updatedSite);
-          }
-          return updatedSite;
-        }
-        return site;
+    let fileToUpload = photoFile;
+    if (photoFile.type !== 'image/jpeg') {
+      const img = new Image();
+      const canvas = document.createElement('canvas');
+      
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = URL.createObjectURL(photoFile);
       });
 
-      const { error: siteError } = await supabase
-        .from('sites')
-        .update({ tasks: updatedSites.find(s => s.id === siteId).tasks })
-        .eq('id', siteId);
-      
-      if (siteError) {
-        console.error('Erreur mise à jour site:', siteError);
-        throw siteError;
-      }
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
 
-      setSites(updatedSites);
-      setModalState({ type: null });
-    } catch (error) {
-      console.error('Erreur lors de la capture:', error);
-      alert(`Erreur lors de l'envoi de la photo: ${error.message}`);
-    } finally {
-      setIsLoading(false);
+      fileToUpload = await new Promise(resolve => {
+        canvas.toBlob(resolve, 'image/jpeg', 0.9);
+      });
     }
-  };
+
+    const { data, error } = await supabase.storage
+      .from('photos')
+      .upload(`public/photos/${fileName}`, fileToUpload, {
+        contentType: 'image/jpeg',
+        upsert: true,
+        cacheControl: '3600'
+      });
+
+    if (error) {
+      console.error('Erreur upload Supabase:', error);
+      throw error;
+    }
+
+    const { data: { publicUrl } } = supabase.storage
+      .from('photos')
+      .getPublicUrl(`public/photos/${fileName}`);
+
+    const updatedSites = sites.map(site => {
+      if (site.id === siteId) {
+        const updatedSite = {
+          ...site,
+          tasks: site.tasks.map(task => {
+            if (task.id === taskId) {
+              const photos = task.photos || [];
+              return {
+                ...task,
+                completed: true,
+                photos: [...photos, {
+                  id: photoId,
+                  url: publicUrl,
+                  timestamp: new Date().toISOString()
+                }],
+                completedAt: new Date().toISOString(),
+                completedBy: 'worker_id'
+              };
+            }
+            return task;
+          })
+        };
+        if (selectedSite && selectedSite.id === siteId) {
+          setSelectedSite(updatedSite);
+        }
+        return updatedSite;
+      }
+      return site;
+    });
+
+    const { error: siteError } = await supabase
+      .from('sites')
+      .update({ tasks: updatedSites.find(s => s.id === siteId).tasks })
+      .eq('id', siteId);
+    
+    if (siteError) {
+      console.error('Erreur mise à jour site:', siteError);
+      throw siteError;
+    }
+
+    setSites(updatedSites);
+    setModalState({ type: null });
+  } catch (error) {
+    console.error('Erreur lors de la capture:', error);
+    alert(`Erreur lors de l'envoi de la photo: ${error.message}`);
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const previewPhoto = async (file) => {
     if (!file || !(file instanceof Blob)) {
@@ -344,24 +347,39 @@ function WorkerInterface() {
 
       // Fonction pour dessiner une tâche
       const drawTask = async (task, yPos) => {
-        // Réduire considérablement la hauteur des tâches
-        const taskHeight = task.photoUrl ? 160 : 60; // Réduit pour plus de compacité
+        const taskHeight = task.photoUrl ? 160 : 60;
         
         if (yPos - taskHeight < 80) {
           yPos = createNewPage();
         }
       
-        // Réduire la taille du rectangle de fond
         drawRect(margin - 3, yPos, contentWidth + 6, -taskHeight, secondaryColor);
-        drawRect(margin - 3, yPos, 2, -taskHeight, accentColor); // Barre plus fine
+        drawRect(margin - 3, yPos, 2, -taskHeight, accentColor);
       
-        // Mise en page plus compacte pour le texte
         let currentY = yPos - 15;
       
-        // Afficher la description et le corps de métier sur la même ligne
+        // Format de la mesure
+        let measureText = '';
+        if (task.measureType) {
+          switch (task.measureType) {
+            case 'square_meters':
+              measureText = `${task.quantity || 0} m²`;
+              break;
+            case 'units':
+              measureText = `${task.quantity || 0} unité${task.quantity > 1 ? 's' : ''}`;
+              break;
+            case 'fixed_price':
+              measureText = 'Forfait';
+              break;
+          }
+        }
+      
+        // Afficher la description avec le corps de métier et la mesure
         const trade = task.tradeId ? trades.find(t => t.id.toString() === task.tradeId) : null;
-        const description = task.description + (trade ? ` (${trade.name})` : '');
-        
+        const description = task.description + 
+          (trade ? ` (${trade.name})` : '') + 
+          (measureText ? ` - ${measureText}` : '');
+      
         drawSafeText(cleanText(description), {
           x: margin + 10,
           y: currentY,
@@ -371,7 +389,7 @@ function WorkerInterface() {
         });
         currentY -= 15;
       
-        // Pièce et date sur la même ligne
+        // Reste du code pour la pièce et la date
         const taskDate = task.completedAt 
           ? new Date(task.completedAt).toLocaleDateString('fr-FR', {
               day: 'numeric',
@@ -404,38 +422,47 @@ function WorkerInterface() {
   }
 
   // Traitement de l'image
-  if (task.photoUrl) {
-    try {
-      const response = await fetch(task.photoUrl);
-      const imageData = await response.arrayBuffer();
-      const image = await pdfDoc.embedJpg(imageData);
-      
-      const imgDims = image.scale(1);
-      const maxWidth = (contentWidth - 40) / 2; // Marges réduites
-      const maxHeight = 100; // Hauteur maximale réduite
-      
-      const scale = Math.min(
-        maxWidth / imgDims.width,
-        maxHeight / imgDims.height
-      );
-      
-      const scaledWidth = Math.floor(imgDims.width * scale);
-      const scaledHeight = Math.floor(imgDims.height * scale);
-      const xOffset = margin + Math.floor((contentWidth - scaledWidth) / 2);
+  if (task.photos && task.photos.length > 0) {
+    const photoSpacing = 10;
+    const photoWidth = (contentWidth - 40 - photoSpacing * (task.photos.length - 1)) / task.photos.length;
+    const photoHeight = 100;
 
-      page.drawImage(image, {
-        x: xOffset,
-        y: currentY - scaledHeight - 5, // Espacement réduit
-        width: scaledWidth,
-        height: scaledHeight,
-      });
-    } catch (error) {
-      console.warn('Erreur lors du traitement de l\'image:', error);
+    let currentX = margin + 20;
+
+    for (const photo of task.photos) {
+      try {
+        const response = await fetch(photo.url);
+        const imageData = await response.arrayBuffer();
+        const image = await pdfDoc.embedJpg(imageData);
+
+        const imgDims = image.scale(1);
+        const scale = Math.min(
+          photoWidth / imgDims.width,
+          photoHeight / imgDims.height
+        );
+
+        const scaledWidth = imgDims.width * scale;
+        const scaledHeight = imgDims.height * scale;
+
+        page.drawImage(image, {
+          x: currentX,
+          y: currentY - scaledHeight - 10,
+          width: scaledWidth,
+          height: scaledHeight,
+        });
+
+        currentX += scaledWidth + photoSpacing;
+      } catch (error) {
+        console.warn('Erreur lors du traitement de l\'image:', error);
+      }
     }
+
+    currentY -= photoHeight + 15; // Espacement après les images
   }
 
   return yPos - taskHeight - 10;
 };
+
 
 
 
@@ -632,80 +659,122 @@ const sendReportByEmail = async (site, email) => {
       <div className="bg-white rounded-lg shadow-md p-6">
         <p className="text-gray-600 mb-4">{selectedSite.address}</p>
         
-        <div className="space-y-6">
-          {Object.entries(
-            selectedSite.tasks.reduce((acc, task) => {
-              const room = task.room || 'Non assigné';
-              if (!acc[room]) acc[room] = [];
-              acc[room].push(task);
-              return acc;
-            }, {})
-          ).map(([room, tasks]) => (
-            <div key={room} className="border-t pt-4 first:border-t-0 first:pt-0">
-              <h3 className="text-lg font-medium mb-3 text-gray-700">{room}</h3>
-              <div className="space-y-4">
-                {tasks.map(task => {
-                  const trade = trades.find(t => t.id.toString() === task.tradeId);
-                  return (
-                    <div key={task.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          <div className="flex items-start justify-between mb-2">
-                            <div>
-                              <p className="font-medium">{task.description}</p>
-                              <p className="text-sm text-gray-500">{trade?.name}</p>
-                            </div>
-                            {!task.completed && (
-                              <label className="relative overflow-hidden flex items-center gap-2 bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700 cursor-pointer">
-                                <Camera className="h-4 w-4" />
-                                <span>Valider</span>
-                                <input
-                                  type="file"
-                                  accept="image/*"
-                                  capture="environment"
-                                  className="absolute inset-0 opacity-0 cursor-pointer"
-                                  onChange={(e) => {
-                                    const file = e.target.files?.[0];
-                                    if (file) {
-                                      handleTaskCompletion(selectedSite.id, task.id, file);
-                                    }
-                                  }}
-                                />
-                              </label>
-                            )}
-                          </div>
-                          {task.completedAt && (
-                            <p className="text-sm text-gray-500">
-                              Terminé le {new Date(task.completedAt).toLocaleDateString()}
-                            </p>
-                          )}
-                        </div>
+<div className="space-y-6">
+  {Object.entries(
+    selectedSite.tasks.reduce((acc, task) => {
+      const room = task.room || 'Non assigné';
+      if (!acc[room]) acc[room] = [];
+      acc[room].push(task);
+      return acc;
+    }, {})
+  ).map(([room, tasks]) => (
+    <div key={room} className="border-t pt-4 first:border-t-0 first:pt-0">
+      <h3 className="text-lg font-medium mb-3 text-gray-700">{room}</h3>
+      <div className="space-y-4">
+        {tasks.map(task => {
+          const trade = trades.find(t => t.id.toString() === task.tradeId);
+          // Formater la mesure
+          let measureText = '';
+          if (task.measureType) {
+            switch (task.measureType) {
+              case 'square_meters':
+                measureText = `${task.quantity || 0} m²`;
+                break;
+              case 'units':
+                measureText = `${task.quantity || 0} unité${task.quantity > 1 ? 's' : ''}`;
+                break;
+              case 'fixed_price':
+                measureText = 'Forfait';
+                break;
+            }
+          }
+
+          return (
+            <div key={task.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+              <div className="flex justify-between items-start">
+                <div className="flex-1">
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <p className="font-medium">{task.description}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-sm text-gray-500">{trade?.name}</span>
+                        {measureText && (
+                          <>
+                            <span className="text-gray-300">•</span>
+                            <span className="text-sm font-medium text-blue-600">
+                              {measureText}
+                            </span>
+                          </>
+                        )}
                       </div>
-                      {task.photoUrl && (
-                        <div className="mt-3">
-                          <div className="relative group aspect-w-16 aspect-h-9 rounded-lg overflow-hidden">
-                            <img
-                              src={task.photoUrl}
-                              alt="Preuve de réalisation"
-                              className="w-full h-full object-cover cursor-pointer"
-                              onClick={() => setModalState({
-                                type: 'view-photo',
-                                data: { photoUrl: task.photoUrl }
-                              })}
-                            />
-                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-opacity flex items-center justify-center">
-                              <Eye className="text-white opacity-0 group-hover:opacity-100 h-8 w-8" />
-                            </div>
-                          </div>
-                        </div>
-                      )}
                     </div>
-                  );
-                })}
+                    {!task.completed && (
+                      <label className="relative overflow-hidden flex items-center gap-2 bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700 cursor-pointer">
+                        <Camera className="h-4 w-4" />
+                        <span>Valider</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="absolute inset-0 opacity-0 cursor-pointer"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) {
+                              handleTaskCompletion(selectedSite.id, task.id, file);
+                            }
+                          }}
+                        />
+                      </label>
+                    )}
+                  </div>
+                  {task.completedAt && (
+                    <p className="text-sm text-gray-500">
+                      Terminé le {new Date(task.completedAt).toLocaleDateString()}
+                    </p>
+                  )}
+                </div>
               </div>
+              {/* Reste du code pour l'affichage de la photo... */}
+{task.photos?.length > 0 && (
+  <div className="mt-3">
+    <div className="flex gap-2">
+      {task.photos.map((photo, index) => (
+        <button
+          key={photo.id}
+          onClick={() => setModalState({
+            type: 'view-photo',
+            data: { photoUrl: photo.url }
+          })}
+          className="text-blue-600 hover:text-blue-800 text-sm"
+        >
+          Photo {index + 1}
+        </button>
+      ))}
+      <label className="text-blue-600 hover:text-blue-800 cursor-pointer text-sm">
+        + Ajouter une photo
+        <input
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) {
+              handleFirstPhotoAndComplete(selectedSite.id, task.id, file);
+            }
+          }}
+        />
+      </label>
+    </div>
+  </div>
+)}
             </div>
-          ))}
-        </div>
+          );
+        })}
+      </div>
+    </div>
+  ))}
+</div>
 
         {selectedSite?.tasks.length > 0 && selectedSite.tasks.every(task => task.completed) && (
   <div className="flex justify-end mt-6 gap-4">
@@ -809,7 +878,7 @@ const sendReportByEmail = async (site, email) => {
                 Annuler
               </button>
               <button
-                onClick={() => handlePhotoCapture(
+                onClick={() => handleFirstPhotoAndComplete(
                   modalState.data.siteId,
                   modalState.data.taskId,
                   modalState.data.photoFile
