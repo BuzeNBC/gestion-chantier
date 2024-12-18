@@ -59,6 +59,71 @@ function WorkerInterface() {
     loadData();
   }, []);
 
+  // Ajoutez cette nouvelle fonction pour gérer la suppression des photos
+const handlePhotoDelete = async (siteId, taskId, photoId) => {
+  try {
+    setIsLoading(true);
+    
+    // Trouvez la tâche et la photo
+    const task = selectedSite.tasks.find(t => t.id === taskId);
+    const photo = task.photos.find(p => p.id === photoId);
+    
+    if (!photo) {
+      throw new Error('Photo non trouvée');
+    }
+
+    // Supprimer la photo de Supabase Storage
+    const fileName = photo.url.split('/').pop();
+    const { error: storageError } = await supabase.storage
+      .from('photos')
+      .remove([`public/photos/${fileName}`]);
+
+    if (storageError) {
+      throw storageError;
+    }
+
+    // Mettre à jour les sites en mémoire
+    const updatedSites = sites.map(site => {
+      if (site.id === siteId) {
+        const updatedSite = {
+          ...site,
+          tasks: site.tasks.map(task => {
+            if (task.id === taskId) {
+              return {
+                ...task,
+                photos: task.photos.filter(p => p.id !== photoId)
+              };
+            }
+            return task;
+          })
+        };
+        if (selectedSite && selectedSite.id === siteId) {
+          setSelectedSite(updatedSite);
+        }
+        return updatedSite;
+      }
+      return site;
+    });
+
+    // Mettre à jour la base de données
+    const { error: updateError } = await supabase
+      .from('sites')
+      .update({ tasks: updatedSites.find(s => s.id === siteId).tasks })
+      .eq('id', siteId);
+
+    if (updateError) {
+      throw updateError;
+    }
+
+    setSites(updatedSites);
+  } catch (error) {
+    console.error('Erreur lors de la suppression de la photo:', error);
+    alert('Erreur lors de la suppression de la photo');
+  } finally {
+    setIsLoading(false);
+  }
+};
+
   // Remplacer la fonction handlePhotoCapture actuelle (vers la ligne 85) par :
 const handleFirstPhotoAndComplete = async (siteId, taskId, photoFile) => {
   if (!photoFile || !(photoFile instanceof Blob)) {
@@ -735,20 +800,32 @@ const sendReportByEmail = async (site, email) => {
                 </div>
               </div>
               {/* Reste du code pour l'affichage de la photo... */}
+              // Modifiez la partie d'affichage des photos dans le rendu pour inclure le bouton de suppression
 {task.photos?.length > 0 && (
   <div className="mt-3">
-    <div className="flex gap-2">
+    <div className="flex flex-wrap gap-2">
       {task.photos.map((photo, index) => (
-        <button
-          key={photo.id}
-          onClick={() => setModalState({
-            type: 'view-photo',
-            data: { photoUrl: photo.url }
-          })}
-          className="text-blue-600 hover:text-blue-800 text-sm"
-        >
-          Photo {index + 1}
-        </button>
+        <div key={photo.id} className="relative group">
+          <button
+            onClick={() => setModalState({
+              type: 'view-photo',
+              data: { photoUrl: photo.url }
+            })}
+            className="text-blue-600 hover:text-blue-800 text-sm"
+          >
+            Photo {index + 1}
+          </button>
+          <button
+            onClick={() => {
+              if (window.confirm('Êtes-vous sûr de vouloir supprimer cette photo ?')) {
+                handlePhotoDelete(selectedSite.id, task.id, photo.id);
+              }
+            }}
+            className="ml-2 text-red-600 hover:text-red-800 opacity-0 group-hover:opacity-100 transition-opacity"
+          >
+            <XCircle className="h-4 w-4" />
+          </button>
+        </div>
       ))}
       <label className="text-blue-600 hover:text-blue-800 cursor-pointer text-sm">
         + Ajouter une photo
