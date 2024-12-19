@@ -8,8 +8,10 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Vérifier la session actuelle
+    console.log("AuthProvider initialized");
+    
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log("Session checked:", session);
       setUser(session?.user ?? null);
       setLoading(false);
     });
@@ -46,8 +48,9 @@ export const AuthProvider = ({ children }) => {
     signOut
   };
 
+  console.log("AuthProvider rendering:", { user, loading });
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut }}>
       {children}
     </AuthContext.Provider>
   );

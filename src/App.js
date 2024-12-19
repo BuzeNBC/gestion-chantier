@@ -24,20 +24,33 @@ const PrivateRoute = ({ children }) => {
 };
 
 function App() {
+  const { loading } = useAuth();
+  console.log("App rendering, loading state:", loading);
+
   return (
     <AuthProvider>
       <Router>
-        <Routes>
-          <Route path="/login" element={<AuthPage />} />
-          <Route
-            path="/"
-            element={
-              <PrivateRoute>
-                <AdminDashboard />
-              </PrivateRoute>
-            }
-          />
-        </Routes>
+        <div className="min-h-screen bg-gray-100"> {/* Ajout d'un fond visible */}
+          <Routes>
+            <Route path="/login" element={
+              <div>
+                <p className="text-black">Login page</p> {/* Test visible */}
+                <AuthPage />
+              </div>
+            } />
+            <Route
+              path="/"
+              element={
+                <PrivateRoute>
+                  <div>
+                    <p className="text-black">Dashboard page</p> {/* Test visible */}
+                    <AdminDashboard />
+                  </div>
+                </PrivateRoute>
+              }
+            />
+          </Routes>
+        </div>
       </Router>
     </AuthProvider>
   );
