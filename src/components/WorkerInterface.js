@@ -5,8 +5,9 @@ import { DBService, compressImage, STORES } from '../services/dbService';
 import { Modal } from './Modal';
 import { supabase } from '../services/supabase';
 import EmailPDFManager from './EmailPDFManager';
+import { useAuth } from '../contexts/AuthContext';
 
-function WorkerInterface() {
+function WorkerInterface({ isAdminInWorkerMode }) {
   const [sites, setSites] = useState([]);
   const [trades, setTrades] = useState([]);
   const [selectedSite, setSelectedSite] = useState(null);
@@ -17,6 +18,7 @@ function WorkerInterface() {
   const [pdfUrl, setPdfUrl] = useState(null);
   const [pdfBlob, setPdfBlob] = useState(null);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const { user } = useAuth();
 
    // Function to detect iOS
    const isIOS = () => {
@@ -41,23 +43,50 @@ function WorkerInterface() {
     return isMobile || isStandalone || isInWebAppiOS || isInWebAppChrome;
   };
 
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [sitesData, tradesData] = await Promise.all([
-          DBService.getAll(STORES.SITES),
-          DBService.getAll(STORES.TRADES)
-        ]);
-        setSites(sitesData || []);
-        setTrades(tradesData || []);
-      } catch (error) {
-        console.error('Erreur de chargement:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+// Au début du composant, ajoutez un state pour le rôle
+const [isAdmin, setIsAdmin] = useState(false);
+
+// Modifiez le useEffect comme suit
+useEffect(() => {
+  const loadData = async () => {
+    try {
+      setIsLoading(true);
+
+      // Charger tous les sites
+      const { data: sitesData, error: sitesError } = await supabase
+        .from('sites')
+        .select('*');
+
+      if (sitesError) throw sitesError;
+
+      // Charger tous les profils avec 'Name' (majuscule)
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, Name');
+
+      if (profilesError) throw profilesError;
+
+      // Combiner les données
+      const sitesWithWorkers = sitesData.map(site => ({
+        ...site,
+        worker: profilesData.find(profile => profile.id === site.worker_id)
+      }));
+
+      setSites(sitesWithWorkers || []);
+
+      const tradesData = await DBService.getAll(STORES.TRADES);
+      setTrades(tradesData || []);
+    } catch (error) {
+      console.error('Erreur chargement données:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (user) {
     loadData();
-  }, []);
+  }
+}, [user, isAdminInWorkerMode]);
 
   // Ajoutez cette nouvelle fonction pour gérer la suppression des photos
 const handlePhotoDelete = async (siteId, taskId, photoId) => {
@@ -269,330 +298,265 @@ const handleFirstPhotoAndComplete = async (siteId, taskId, photoFile) => {
   }, [pdfUrl]);
 
   const generatePDF = useCallback(async (site) => {
-    const margin = 30; // Réduction des marges générales
     if (!site || pdfGenerating) return;
   
     try {
       setPdfGenerating(true);
-  
       const pdfDoc = await PDFDocument.create();
-      let page = pdfDoc.addPage([842, 1191]); // A4
-
-      // Fonction utilitaire pour nettoyer le texte
-      const cleanText = (text) => {
-        if (!text) return '';
-        // Remplacer les caractères problématiques par leurs équivalents compatibles
-        return text
-          .replace(/[≥]/g, '>=')
-          .replace(/[≤]/g, '<=')
-          .replace(/[—]/g, '-')
-          .replace(/[""]/g, '"')
-          .replace(/['']/g, "'")
-          .normalize('NFKD')
-          .replace(/[\u0300-\u036f]/g, '') // Enlève les accents
-          .replace(/[^\x00-\x7F]/g, ''); // Garde uniquement les caractères ASCII
-      };
       
-      // Incorporation des polices
+      // Réduction des dimensions
+      const PAGE_WIDTH = 842;
+      const PAGE_HEIGHT = 1191;
+      const MARGIN = 40;
+      const CONTENT_WIDTH = PAGE_WIDTH - (2 * MARGIN);
+      
+      // Configuration des images plus compacte
+      const PHOTO_HEIGHT = 100;
+      const PHOTO_WIDTH = (CONTENT_WIDTH - 40) / 2;
+      const TASK_PADDING = 15;
+      
+      let page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+      let yPosition = PAGE_HEIGHT - MARGIN;
+  
+      // Polices et couleurs
       const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
       const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
       const helveticaOblique = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
-
-      // Constantes de design
-      const margin = 30; // Modifié
-      const pageWidth = page.getWidth();
-      const pageHeight = page.getHeight();
-      const contentWidth = pageWidth - (2 * margin);
-      
-      // Fonction sécurisée pour dessiner du texte
-      const drawSafeText = (text, options) => {
-        try {
-          const cleanedText = cleanText(text);
-          page.drawText(cleanedText, options);
-        } catch (error) {
-          console.warn('Erreur lors du dessin du texte:', text, error);
-          // Tenter de dessiner caractère par caractère en cas d'erreur
-          try {
-            const chars = cleanText(text).split('');
-            let xOffset = 0;
-            chars.forEach(char => {
-              try {
-                page.drawText(char, {
-                  ...options,
-                  x: options.x + xOffset
-                });
-                xOffset += options.size * 0.6; // Estimation approximative de la largeur
-              } catch (charError) {
-                console.warn('Impossible de dessiner le caractère:', char);
-              }
-            });
-          } catch (fallbackError) {
-            console.error('Échec du fallback texte:', fallbackError);
-          }
-        }
-      };
-
-      // Fonction pour créer une nouvelle page
-      const createNewPage = () => {
-        page = pdfDoc.addPage([842, 1191]);
-        drawRect(0, pageHeight - 100, pageWidth, 100, primaryColor);
-        drawSafeText(`${cleanText(site.name)} (suite)`, {
-          x: margin,
-          y: pageHeight - 60,
-          size: 24,
-          font: helveticaBold,
-          color: headerTextColor,
-        });
-        return pageHeight - 150;
-      };
-
-      // Couleurs
+  
       const primaryColor = rgb(0.12, 0.29, 0.49);
-      const secondaryColor = rgb(0.97, 0.97, 0.97);
-      const accentColor = rgb(0.2, 0.5, 0.8);
       const textColor = rgb(0.1, 0.1, 0.1);
       const headerTextColor = rgb(1, 1, 1);
-
-      // Fonction pour dessiner des rectangles
-      const drawRect = (x, y, width, height, color) => {
-        page.drawRectangle({
-          x,
-          y,
-          width,
-          height,
-          color: color,
-        });
+      const backgroundColor = rgb(0.98, 0.98, 0.98);
+  
+      const cleanText = (text) => {
+        if (!text) return '';
+  
+        try {
+          const encoder = new TextEncoder();
+          const decoder = new TextDecoder('utf-8');
+          let cleanedText = decoder.decode(encoder.encode(text));
+  
+          // Remplacer les caractères spéciaux
+          cleanedText = cleanedText
+            .replace(/[≥]/g, '>=')
+            .replace(/[≤]/g, '<=')
+            .replace(/[—–]/g, '-')
+            .replace(/[""]/g, '"')
+            .replace(/['']/g, "'")
+            .replace(/[…]/g, '...');
+  
+          return cleanedText;
+        } catch (error) {
+          return text;
+        }
       };
-
-      // En-tête avec informations du chantier
-      drawRect(0, pageHeight - 140, pageWidth, 140, primaryColor);
-      
-      // Titre principal
-      drawSafeText("RAPPORT D'INSPECTION", {
-        x: margin,
-        y: pageHeight - 40,
-        size: 24,
-        font: helveticaBold,
-        color: headerTextColor,
-      });
-
-      // Informations du site
-      drawSafeText(`Chantier : ${cleanText(site.name)}`, {
-        x: margin,
-        y: pageHeight - 70,
-        size: 16,
-        font: helveticaBold,
-        color: headerTextColor,
-      });
-
-      drawSafeText(`Adresse : ${cleanText(site.address)}`, {
-        x: margin,
-        y: pageHeight - 90,
-        size: 12,
-        font: helvetica,
-        color: headerTextColor,
-      });
-
-      // Date du rapport
-      const currentDate = new Date().toLocaleDateString('fr-FR', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric'
-      });
-
-      drawSafeText(`Genere le ${cleanText(currentDate)}`, {
-        x: margin,
-        y: pageHeight - 110,
-        size: 10,
-        font: helveticaOblique,
-        color: headerTextColor,
-      });
-
-      let yPosition = pageHeight - 180;
-
-      // Fonction pour dessiner une tâche
-      const drawTask = async (task, yPos) => {
-        const taskHeight = task.photoUrl ? 160 : 60;
+  
+      const drawHeader = (isFirstPage = false) => {
+        const headerHeight = isFirstPage ? 100 : 60;
         
-        if (yPos - taskHeight < 80) {
-          yPos = createNewPage();
+        page.drawRectangle({
+          x: 0,
+          y: PAGE_HEIGHT - headerHeight,
+          width: PAGE_WIDTH,
+          height: headerHeight,
+          color: primaryColor,
+        });
+  
+        if (isFirstPage) {
+          page.drawText("RAPPORT D'INSPECTION", {
+            x: MARGIN,
+            y: PAGE_HEIGHT - 35,
+            size: 22,
+            font: helveticaBold,
+            color: headerTextColor,
+          });
+  
+          page.drawText(`Chantier: ${cleanText(site.name)}`, {
+            x: MARGIN,
+            y: PAGE_HEIGHT - 65,
+            size: 14,
+            font: helveticaBold,
+            color: headerTextColor,
+          });
+  
+          page.drawText(`Adresse: ${cleanText(site.address)}`, {
+            x: MARGIN,
+            y: PAGE_HEIGHT - 85,
+            size: 12,
+            font: helvetica,
+            color: headerTextColor,
+          });
+  
+          return PAGE_HEIGHT - headerHeight - 20;
+        } else {
+          page.drawText(`${cleanText(site.name)} (suite)`, {
+            x: MARGIN,
+            y: PAGE_HEIGHT - 40,
+            size: 14,
+            font: helveticaBold,
+            color: headerTextColor,
+          });
+          return PAGE_HEIGHT - headerHeight - 15;
         }
-      
-        drawRect(margin - 3, yPos, contentWidth + 6, -taskHeight, secondaryColor);
-        drawRect(margin - 3, yPos, 2, -taskHeight, accentColor);
-      
-        let currentY = yPos - 15;
-      
-        // Format de la mesure
-        let measureText = '';
-        if (task.measureType) {
-          switch (task.measureType) {
-            case 'square_meters':
-              measureText = `${task.quantity || 0} m²`;
-              break;
-            case 'units':
-              measureText = `${task.quantity || 0} unité${task.quantity > 1 ? 's' : ''}`;
-              break;
-            case 'fixed_price':
-              measureText = 'Forfait';
-              break;
-          }
+      };
+  
+      yPosition = drawHeader(true);
+  
+      const drawTask = async (task, startY) => {
+        const hasPhotos = task.photos && task.photos.length > 0;
+        const minHeight = 60;
+        const photoSectionHeight = hasPhotos ? PHOTO_HEIGHT + 10 : 0;
+        const taskHeight = Math.max(minHeight, photoSectionHeight + 50);
+  
+        if (startY - taskHeight < MARGIN) {
+          page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+          startY = drawHeader(false);
         }
-      
-        // Afficher la description avec le corps de métier et la mesure
-        const trade = task.tradeId ? trades.find(t => t.id.toString() === task.tradeId) : null;
-        const description = task.description + 
-          (trade ? ` (${trade.name})` : '') + 
-          (measureText ? ` - ${measureText}` : '');
-      
-        drawSafeText(cleanText(description), {
-          x: margin + 10,
+  
+        // Fond de la tâche
+        page.drawRectangle({
+          x: MARGIN,
+          y: startY,
+          width: CONTENT_WIDTH,
+          height: -taskHeight,
+          color: backgroundColor,
+        });
+  
+        // Barre latérale
+        page.drawRectangle({
+          x: MARGIN,
+          y: startY,
+          width: 4,
+          height: -taskHeight,
+          color: primaryColor,
+        });
+  
+        let currentY = startY - 20;
+  
+        // Description et infos
+        const trade = trades.find(t => t.id.toString() === task.tradeId);
+        const tradeText = trade ? ` - ${trade.name}` : '';
+        
+        // Description de la tâche
+        page.drawText(cleanText(task.description), {
+          x: MARGIN + TASK_PADDING,
           y: currentY,
-          size: 11,
+          size: 12,
           font: helveticaBold,
           color: textColor,
         });
-        currentY -= 15;
-      
-        // Reste du code pour la pièce et la date
-        const taskDate = task.completedAt 
-          ? new Date(task.completedAt).toLocaleDateString('fr-FR', {
-              day: 'numeric',
-              month: 'short',
-              year: 'numeric'
-            })
-          : "Non complete";
-      
-        const locationAndDate = `${task.room || "Non specifiee"} - Réalisé le ${taskDate}`;
-        drawSafeText(cleanText(locationAndDate), {
-          x: margin + 10,
+  
+        currentY -= 18;
+  
+        // Localisation et métier
+        const locationText = `${task.room || 'Non spécifié'}${tradeText}`;
+        page.drawText(cleanText(locationText), {
+          x: MARGIN + TASK_PADDING,
           y: currentY,
-          size: 9,
+          size: 10,
           font: helvetica,
           color: textColor,
         });
-
-        // Ajouter le corps de métier si disponible
-  if (task.tradeId) {
-    const trade = trades.find(t => t.id.toString() === task.tradeId);
-    if (trade) {
-      drawSafeText(`Corps de metier : ${cleanText(trade.name)}`, {
-        x: margin + 20,
-        y: yPos - 100,
-        size: 12,
-        font: helvetica,
-        color: textColor,
-      });
-    }
-  }
-
-  // Traitement de l'image
-  if (task.photos && task.photos.length > 0) {
-    const photoSpacing = 10;
-    const photoWidth = (contentWidth - 40 - photoSpacing * (task.photos.length - 1)) / task.photos.length;
-    const photoHeight = 100;
-
-    let currentX = margin + 20;
-
-    for (const photo of task.photos) {
-      try {
-        const response = await fetch(photo.url);
-        const imageData = await response.arrayBuffer();
-        const image = await pdfDoc.embedJpg(imageData);
-
-        const imgDims = image.scale(1);
-        const scale = Math.min(
-          photoWidth / imgDims.width,
-          photoHeight / imgDims.height
-        );
-
-        const scaledWidth = imgDims.width * scale;
-        const scaledHeight = imgDims.height * scale;
-
-        page.drawImage(image, {
-          x: currentX,
-          y: currentY - scaledHeight - 10,
-          width: scaledWidth,
-          height: scaledHeight,
-        });
-
-        currentX += scaledWidth + photoSpacing;
-      } catch (error) {
-        console.warn('Erreur lors du traitement de l\'image:', error);
-      }
-    }
-
-    currentY -= photoHeight + 15; // Espacement après les images
-  }
-
-  return yPos - taskHeight - 10;
-};
-
-
-
-
-      // Afficher toutes les tâches
+  
+        // Date alignée à droite
+        if (task.completedAt) {
+          const completionDate = new Date(task.completedAt).toLocaleDateString('fr-FR', {
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric'
+          });
+          const dateText = `Réalisé le ${completionDate}`;
+          const dateWidth = helveticaOblique.widthOfTextAtSize(dateText, 10);
+          
+          page.drawText(cleanText(dateText), {
+            x: MARGIN + CONTENT_WIDTH - dateWidth - TASK_PADDING,
+            y: currentY,
+            size: 10,
+            font: helveticaOblique,
+            color: textColor,
+          });
+        }
+  
+        // Photos
+        if (hasPhotos) {
+          currentY -= 15;
+          let photoX = MARGIN + TASK_PADDING;
+  
+          for (let i = 0; i < Math.min(2, task.photos.length); i++) {
+            try {
+              const photo = task.photos[i];
+              const response = await fetch(photo.url);
+              const imageData = await response.arrayBuffer();
+              const image = await pdfDoc.embedJpg(imageData);
+  
+              const imgDims = image.scale(1);
+              const scaleFactor = Math.min(
+                (PHOTO_WIDTH - 20) / imgDims.width,
+                (PHOTO_HEIGHT - 10) / imgDims.height
+              );
+  
+              const scaledWidth = imgDims.width * scaleFactor;
+              const scaledHeight = imgDims.height * scaleFactor;
+  
+              const xOffset = (PHOTO_WIDTH - scaledWidth) / 2;
+              const yOffset = (PHOTO_HEIGHT - scaledHeight) / 2;
+  
+              page.drawImage(image, {
+                x: photoX + xOffset,
+                y: currentY - PHOTO_HEIGHT + yOffset,
+                width: scaledWidth,
+                height: scaledHeight,
+              });
+  
+              photoX += PHOTO_WIDTH + 20;
+            } catch (error) {
+              console.warn('Erreur lors du traitement de l\'image:', error);
+            }
+          }
+        }
+  
+        return startY - taskHeight - 10;
+      };
+  
+      // Dessiner les tâches
       for (const task of site.tasks) {
         yPosition = await drawTask(task, yPosition);
       }
-
+  
       // Pied de page
-      pdfDoc.getPages().forEach((p, index) => {
-        drawSafeText(`Page ${index + 1} sur ${pdfDoc.getPageCount()}`, {
-          x: pageWidth / 2 - 40,
-          y: margin / 2,
-          size: 10,
+      const pages = pdfDoc.getPages();
+      pages.forEach((p, index) => {
+        p.drawText(`Page ${index + 1}/${pages.length}`, {
+          x: PAGE_WIDTH / 2 - 25,
+          y: 20,
+          size: 9,
           font: helvetica,
           color: primaryColor,
         });
       });
-
-      // Génération et ouverture du PDF
+  
       const pdfBytes = await pdfDoc.save();
       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-      
-      if (pdfUrl) {
-        URL.revokeObjectURL(pdfUrl);
-      }
-      
       const newUrl = URL.createObjectURL(blob);
+  
       setPdfUrl(newUrl);
       setPdfBlob(blob);
-      window.open(newUrl, '_blank');
-
-      // Handle differently for iOS
-      if (isIOS()) {
+  
+      if (isMobileDevice()) {
         setShowDownloadModal(true);
       } else {
         window.open(newUrl, '_blank');
       }
-
-       // Gestion différente selon le type d'appareil
-       if (isMobileDevice()) {
-        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-        if (pdfUrl) {
-          URL.revokeObjectURL(pdfUrl);
-        }
-        const newUrl = URL.createObjectURL(blob);
-        setPdfUrl(newUrl);
-        setPdfBlob(blob);
-        setShowDownloadModal(true);
-      } else {
-        const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-        const newUrl = URL.createObjectURL(blob);
-        window.open(newUrl, '_blank');
-      }
-      
-      // Retourner les bytes du PDF pour pouvoir les réutiliser
+  
       return pdfBytes;
-
+  
     } catch (error) {
       console.error('Erreur lors de la génération du PDF:', error);
       alert('Une erreur est survenue lors de la génération du PDF.');
     } finally {
       setPdfGenerating(false);
     }
-}, [pdfUrl, pdfGenerating]);
+  }, [pdfUrl, pdfGenerating, trades]);
 
 // Fonction améliorée pour gérer le téléchargement
 const handlePDFDownload = () => {
@@ -675,6 +639,7 @@ const sendReportByEmail = async (site, email) => {
             const totalTasks = site.tasks.length;
             const progress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
 
+            // Dans le rendu de la liste des chantiers
             return (
               <div
                 key={site.id}
@@ -685,6 +650,11 @@ const sendReportByEmail = async (site, email) => {
                   <div className="flex-1">
                     <h2 className="text-xl font-semibold mb-2">{site.name}</h2>
                     <p className="text-gray-600 mb-2">{site.address}</p>
+                    {site.worker && (
+                      <p className="text-sm text-gray-500 mb-2">
+                        Ouvrier assigné : {site.worker.Name}
+                      </p>
+                    )}
                     <div className="flex items-center gap-2">
                       <div className="flex-1 h-2 bg-gray-200 rounded-full w-48">
                         <div
@@ -800,7 +770,7 @@ const sendReportByEmail = async (site, email) => {
                 </div>
               </div>
               {/* Reste du code pour l'affichage de la photo... */}
-              // Modifiez la partie d'affichage des photos dans le rendu pour inclure le bouton de suppression
+              
 {task.photos?.length > 0 && (
   <div className="mt-3">
     <div className="flex flex-wrap gap-2">

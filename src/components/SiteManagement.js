@@ -12,6 +12,8 @@ import {
   ChevronDown // Ajouté
 } from 'lucide-react';
 import { DBService, compressImage, STORES } from '../services/dbService';
+import { useAuth } from '../contexts/AuthContext';
+import { supabase } from '../services/supabase';
 
 // Composants réutilisables
 const Modal = memo(({ title, onClose, children }) => (
@@ -257,8 +259,29 @@ const SiteForm = memo(({ site, onSubmit, onCancel }) => {
     address: '',
     startDate: new Date().toISOString().split('T')[0],
     status: 'planned',
-    tasks: []
+    tasks: [],
+    worker_id: ''
   });
+
+  const [workers, setWorkers] = useState([]);
+
+  useEffect(() => {
+    const fetchWorkers = async () => {
+      try {
+        const { data: workersData, error } = await supabase
+          .from('profiles')
+          .select('id, Name, role')
+          .eq('role', 'worker');
+
+        if (error) throw error;
+        setWorkers(workersData || []);
+      } catch (error) {
+        console.error('Erreur lors du chargement des ouvriers:', error);
+      }
+    };
+
+    fetchWorkers();
+  }, []);
 
   const handleSubmit = () => {
     if (!formData.name || !formData.address) {
@@ -317,6 +340,25 @@ const SiteForm = memo(({ site, onSubmit, onCancel }) => {
         </select>
       </div>
 
+      <div>
+        <label htmlFor="worker-select" className="block text-sm font-medium mb-1">
+          Assigner à un ouvrier
+        </label>
+        <select
+          id="worker-select"
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          value={formData.worker_id}
+          onChange={(e) => setFormData({ ...formData, worker_id: e.target.value })}
+        >
+          <option value="">Non assigné</option>
+          {workers.map(worker => (
+            <option key={worker.id} value={worker.id}>
+              {worker.Name || 'Ouvrier sans nom'}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <div className="flex justify-end gap-4">
         <button
           onClick={onCancel}
@@ -334,7 +376,6 @@ const SiteForm = memo(({ site, onSubmit, onCancel }) => {
     </div>
   );
 });
-
 // Composant principal SiteManagement
 const SiteManagement = () => {
   const [sites, setSites] = useState([]);
@@ -343,6 +384,8 @@ const SiteManagement = () => {
   const [modalState, setModalState] = useState({ type: null, data: null });
   const [isLoading, setIsLoading] = useState(true);
   const [filterVisible, setFilterVisible] = useState(false);
+  const [workers, setWorkers] = useState([]);
+  const [workerNames, setWorkerNames] = useState({});
   const [filters, setFilters] = useState({
   status: 'all',
   dateRange: 'all',
@@ -583,6 +626,11 @@ const SiteManagement = () => {
             <div>
               <h2 className="text-xl font-semibold mb-1">{site.name}</h2>
               <p className="text-sm text-gray-500">{site.address}</p>
+              {site.worker_id && (
+          <p className="mt-2 text-sm text-gray-600">
+            Assigné à : {workerNames[site.worker_id] || 'Ouvrier inconnu'}
+          </p>
+        )}
               <p className="text-sm text-gray-500">
                 Début: {new Date(site.startDate).toLocaleDateString()}
               </p>
