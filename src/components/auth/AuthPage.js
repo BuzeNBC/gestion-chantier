@@ -16,19 +16,26 @@ const AuthPage = () => {
     setError(null);
 
     try {
-      if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (error) throw error;
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) throw error;
+
+      // Vérifier le rôle de l'utilisateur
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', data.user.id)
+        .single();
+
+      // Vérifier si l'utilisateur a un rôle admin
+      if (profile?.role === 'admin') {
+        localStorage.setItem('userRole', 'admin');
       } else {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-        });
-        if (error) throw error;
+        localStorage.setItem('userRole', 'worker');
       }
+
       navigate('/');
     } catch (error) {
       setError(error.message);
@@ -36,6 +43,7 @@ const AuthPage = () => {
       setLoading(false);
     }
   };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4">
       <div className="max-w-md w-full">
@@ -43,7 +51,6 @@ const AuthPage = () => {
           {isLogin ? 'Connexion' : 'Inscription'}
         </h2>
   
-        {/* Formulaire simplifiée avec onClick plutôt que onSubmit */}
         <div className="space-y-4">
           <input
             type="email"
@@ -68,24 +75,17 @@ const AuthPage = () => {
           )}
   
           <button
-            onClick={(e) => {
-              e.preventDefault();
-              console.log('Bouton cliqué');
-              handleAuth(e);
-            }}
+            onClick={handleAuth}
             disabled={loading}
-            className="w-full bg-blue-500 text-white p-2 rounded"
+            className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600 transition-colors"
           >
             {loading ? 'Chargement...' : (isLogin ? 'Se connecter' : "S'inscrire")}
           </button>
   
           <button
             type="button"
-            onClick={() => {
-              console.log('Toggle login/signup');
-              setIsLogin(!isLogin);
-            }}
-            className="w-full text-blue-500"
+            onClick={() => setIsLogin(!isLogin)}
+            className="w-full text-blue-500 hover:underline"
           >
             {isLogin ? "S'inscrire" : "Se connecter"}
           </button>

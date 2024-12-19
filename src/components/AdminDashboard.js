@@ -132,6 +132,7 @@ function AdminDashboard() {
   const [userRole, setUserRole] = useState('worker');
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [isRealAdmin, setIsRealAdmin] = useState(false); // Pour suivre le vrai rôle
+  const [realUserRole, setRealUserRole] = useState(null); // Ajout de ce state
   const { signOut } = useAuth();
   const navigate = useNavigate();
 
@@ -146,14 +147,22 @@ function AdminDashboard() {
           .eq('id', user.id)
           .single();
 
-        const isAdmin = profile?.role === 'admin';
-        setIsRealAdmin(isAdmin); // Stocke le vrai rôle
-        setUserRole(isAdmin ? 'admin' : 'worker'); // Met à jour le rôle initial
+        if (profile?.role === 'admin') {
+          setUserRole('admin');
+          setRealUserRole('admin'); // Sauvegarde du rôle réel
+        } else {
+          setUserRole('worker');
+          setRealUserRole('worker');
+        }
       }
     };
 
     checkRole();
   }, []);
+
+  // Log pour debug
+  console.log('realUserRole:', realUserRole);
+  console.log('userRole:', userRole);
 
   const handleLogout = async () => {
     try {
@@ -247,7 +256,7 @@ function AdminDashboard() {
             {activePage === 'sites' && <SiteManagement />}
           </>
         ) : (
-          <WorkerInterface isAdminInWorkerMode={userRole === 'admin'} />
+          <WorkerInterface isAdminInWorkerMode={realUserRole === 'admin'} />
         )}
       </div>
 

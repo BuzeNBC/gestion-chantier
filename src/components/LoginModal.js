@@ -24,34 +24,44 @@ function LoginModal({ onClose }) {
       setIsLoading(true);
       setError('');
 
-      // Vérifier le mot de passe avec l'utilisateur actuellement connecté
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: currentUserEmail, // Utiliser l'email de l'utilisateur actuel
+        email: currentUserEmail,
         password
       });
 
       if (error) throw error;
 
-      // Vérifier le rôle
-      const { data: profile } = await supabase
+      // Ajout de logs pour debug
+      console.log("User data:", data.user);
+
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', data.user.id)
         .single();
 
+      // Ajout de logs pour debug
+      console.log("Profile data:", profile);
+      console.log("Profile error:", profileError);
+
+      if (profileError) {
+        setError(`Erreur profil: ${profileError.message}`);
+        return;
+      }
+
       if (profile?.role === 'admin') {
         onClose('admin');
       } else {
-        setError('Accès non autorisé');
+        setError(`Rôle actuel: ${profile?.role || 'non défini'}`);
       }
       
     } catch (error) {
-      console.error('Erreur de connexion:', error);
-      setError('Mot de passe incorrect');
+      console.error('Erreur complète:', error);
+      setError(error.message);
     } finally {
       setIsLoading(false);
     }
-  };
+};
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
