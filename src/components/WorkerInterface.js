@@ -7,7 +7,7 @@ import { supabase } from '../services/supabase';
 import EmailPDFManager from './EmailPDFManager';
 import { useAuth } from '../contexts/AuthContext';
 
-function WorkerInterface({ isAdminInWorkerMode }) {
+function WorkerInterface({ isAdminInWorkerMode = false }) {
   const [sites, setSites] = useState([]);
   const [trades, setTrades] = useState([]);
   const [selectedSite, setSelectedSite] = useState(null);
@@ -51,31 +51,50 @@ useEffect(() => {
   const loadData = async () => {
     try {
       setIsLoading(true);
-
-      // Charger tous les sites
-      const { data: sitesData, error: sitesError } = await supabase
-        .from('sites')
-        .select('*');
-
-      if (sitesError) throw sitesError;
-
-      // Charger tous les profils avec 'Name' (majuscule)
-      const { data: profilesData, error: profilesError } = await supabase
+      
+      // Récupérer l'utilisateur actuel
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      console.log('Current user:', currentUser);
+  
+      // D'abord, vérifier le rôle de l'utilisateur
+      const { data: userProfile, error: profileError } = await supabase
         .from('profiles')
-        .select('id, Name');
-
-      if (profilesError) throw profilesError;
-
-      // Combiner les données
-      const sitesWithWorkers = sitesData.map(site => ({
-        ...site,
-        worker: profilesData.find(profile => profile.id === site.worker_id)
-      }));
-
-      setSites(sitesWithWorkers || []);
-
-      const tradesData = await DBService.getAll(STORES.TRADES);
-      setTrades(tradesData || []);
+        .select('role')
+        .eq('id', currentUser.id)
+        .single();
+  
+      if (profileError) {
+        console.error('Erreur profil:', profileError);
+        throw profileError;
+      }
+  
+      // Construire la requête de base
+      let query = supabase
+        .from('sites')
+        .select(`
+          *,
+          profiles:worker_id (
+            id,
+            Name
+          )
+        `);
+  
+      // Si ce n'est pas un admin en mode worker, filtrer par worker_id
+      if (!isAdminInWorkerMode && userProfile.role !== 'admin') {
+        query = query.eq('worker_id', currentUser.id);
+      }
+  
+      // Exécuter la requête
+      const { data: sitesData, error: sitesError } = await query;
+  
+      if (sitesError) {
+        console.error('Erreur sites:', sitesError);
+        throw sitesError;
+      }
+  
+      console.log('Sites chargés:', sitesData);
+      setSites(sitesData || []);
+  
     } catch (error) {
       console.error('Erreur chargement données:', error);
     } finally {

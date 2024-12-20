@@ -130,39 +130,43 @@ function DashboardContent() {
 function AdminDashboard() {
   const [activePage, setActivePage] = useState('dashboard');
   const [userRole, setUserRole] = useState('worker');
+  const [realUserRole, setRealUserRole] = useState(null);
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const [isRealAdmin, setIsRealAdmin] = useState(false); // Pour suivre le vrai rôle
-  const [realUserRole, setRealUserRole] = useState(null); // Ajout de ce state
+  const [isLoading, setIsLoading] = useState(true);
   const { signOut } = useAuth();
   const navigate = useNavigate();
 
   // Premier useEffect pour la vérification initiale du rôle
   useEffect(() => {
     const checkRole = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
-          .single();
+      try {
+        setIsLoading(true);
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .single();
 
-        if (profile?.role === 'admin') {
-          setUserRole('admin');
-          setRealUserRole('admin'); // Sauvegarde du rôle réel
-        } else {
-          setUserRole('worker');
-          setRealUserRole('worker');
+          // Mettre à jour les deux états de rôle
+          if (profile?.role === 'admin') {
+            setUserRole('admin');
+            setRealUserRole('admin');
+          } else {
+            setUserRole('worker');
+            setRealUserRole('worker');
+          }
         }
+      } catch (error) {
+        console.error('Erreur lors de la vérification du rôle:', error);
+      } finally {
+        setIsLoading(false);
       }
     };
 
     checkRole();
   }, []);
-
-  // Log pour debug
-  console.log('realUserRole:', realUserRole);
-  console.log('userRole:', userRole);
 
   const handleLogout = async () => {
     try {
@@ -173,11 +177,13 @@ function AdminDashboard() {
     }
   };
 
-  // Modification de handleRoleChange pour préserver l'état isRealAdmin
   const handleRoleChange = (role) => {
-    setUserRole(role);
-    setShowLoginModal(false);
-    setActivePage('dashboard');
+    // Vérifier si l'utilisateur est réellement admin avant de permettre le changement
+    if (realUserRole === 'admin') {
+      setUserRole(role);
+      setShowLoginModal(false);
+      setActivePage('dashboard');
+    }
   };
 
   const handleRoleButtonClick = () => {
@@ -187,6 +193,14 @@ function AdminDashboard() {
       handleRoleChange('worker');
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-gray-100">
@@ -230,13 +244,16 @@ function AdminDashboard() {
             </>
           )}
 
-          <button
-            onClick={handleRoleButtonClick}
-            className="w-full flex items-center px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition duration-300"
-          >
-            <UserCog className="h-5 w-5 mr-2" />
-            {userRole === 'admin' ? 'Mode ouvrier' : 'Mode admin'}
-          </button>
+          {/* Ne montrer le bouton de changement de rôle que pour les vrais admins */}
+          {realUserRole === 'admin' && (
+            <button
+              onClick={handleRoleButtonClick}
+              className="w-full flex items-center px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition duration-300"
+            >
+              <UserCog className="h-5 w-5 mr-2" />
+              {userRole === 'admin' ? 'Mode ouvrier' : 'Mode admin'}
+            </button>
+          )}
 
           <button
             onClick={handleLogout}
@@ -264,4 +281,5 @@ function AdminDashboard() {
     </div>
   );
 }
+
 export default AdminDashboard;
