@@ -54,9 +54,11 @@ const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
     isCustomTask: false,
     searchTerm: '',
     selectedRoom: '',
-    customRoom: '',      // Nouveau champ pour la pièce personnalisée
-    isCustomRoom: false, // Nouveau champ pour indiquer une pièce personnalisée
+    customRoom: '',
+    isCustomRoom: false,
     measureType: 'square_meters',
+    customMeasureType: '',
+    isCustomMeasureType: false,
     quantity: ''
   });
   
@@ -74,8 +76,11 @@ const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
   const handleSubmit = () => {
     const taskDescription = formData.isCustomTask ? formData.customTask : formData.selectedTask;
     const roomName = formData.isCustomRoom ? formData.customRoom : formData.selectedRoom;
+    const measureType = formData.isCustomMeasureType ? formData.customMeasureType : formData.measureType;
     
-    if (!formData.selectedTrade || !taskDescription || !roomName) {
+    if (!formData.selectedTrade || !taskDescription || !roomName || 
+        (!formData.isCustomMeasureType && !formData.measureType) || 
+        (formData.isCustomMeasureType && !formData.customMeasureType)) {
       alert('Veuillez remplir tous les champs obligatoires');
       return;
     }
@@ -86,8 +91,9 @@ const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
       room: roomName,
       completed: false,
       isCustom: formData.isCustomTask,
-      measureType: formData.measureType,
-      quantity: formData.measureType !== 'fixed_price' ? parseFloat(formData.quantity) : null
+      measureType: measureType,
+      isCustomMeasureType: formData.isCustomMeasureType,
+      quantity: measureType !== 'fixed_price' ? parseFloat(formData.quantity) : null
     };
 
     onSubmit(taskData);
@@ -117,19 +123,49 @@ const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
         </select>
       </div>
 
-      {/* Type de mesure */}
+      {/* Type de mesure avec option personnalisée */}
       <div>
-        <label className="block text-sm font-medium mb-1">Type de mesure</label>
-        <select
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-          value={formData.measureType}
-          onChange={(e) => handleInputChange('measureType', e.target.value)}
-        >
-          <option value="square_meters">Mètres carrés (m²)</option>
-          <option value="linear_meters">Mètre Linéaire (ml)</option>
-          <option value="units">Unités</option>
-          <option value="fixed_price">Forfait</option>
-        </select>
+        <div className="flex items-center gap-2 mb-2">
+          <input
+            type="checkbox"
+            id="custom-measure"
+            checked={formData.isCustomMeasureType}
+            onChange={(e) => {
+              handleInputChange('isCustomMeasureType', e.target.checked);
+              if (e.target.checked) {
+                handleInputChange('measureType', '');
+              } else {
+                handleInputChange('customMeasureType', '');
+                handleInputChange('measureType', 'square_meters');
+              }
+            }}
+            className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+          />
+          <label htmlFor="custom-measure" className="text-sm text-gray-600">
+            Créer un nouveau type de mesure
+          </label>
+        </div>
+
+        {formData.isCustomMeasureType ? (
+          <input
+            type="text"
+            placeholder="Ex: Mètre cube (m³)"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+            value={formData.customMeasureType}
+            onChange={(e) => handleInputChange('customMeasureType', e.target.value)}
+          />
+        ) : (
+          <select
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+            value={formData.measureType}
+            onChange={(e) => handleInputChange('measureType', e.target.value)}
+          >
+            <option value="square_meters">Mètres carrés (m²)</option>
+            <option value="linear_meters">Mètre Linéaire (ml)</option>
+            <option value="units">Unités</option>
+            <option value="fixed_price">Forfait</option>
+          </select>
+        )}
       </div>
 
       {/* Section Pièce avec option personnalisée */}
@@ -176,11 +212,14 @@ const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
         )}
       </div>
 
-      {/* Quantité (pour m² et unités) */}
-      {formData.measureType !== 'fixed_price' && (
+      {/* Quantité */}
+      {(!formData.isCustomMeasureType && formData.measureType !== 'fixed_price') || (formData.isCustomMeasureType) && (
         <div>
           <label className="block text-sm font-medium mb-1">
-            {formData.measureType === 'square_meters' ? 'Surface en m²' : 'Nombre d\'unités'}
+            {formData.isCustomMeasureType ? `Quantité (${formData.customMeasureType})` :
+             formData.measureType === 'square_meters' ? 'Surface en m²' :
+             formData.measureType === 'linear_meters' ? 'Longueur en ml' :
+             'Nombre d\'unités'}
           </label>
           <input
             type="number"
@@ -188,7 +227,7 @@ const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
             value={formData.quantity}
             onChange={(e) => handleInputChange('quantity', e.target.value)}
             min="0"
-            step={formData.measureType === 'square_meters' ? "0.01" : "1"}
+            step={formData.measureType === 'square_meters' || formData.measureType === 'linear_meters' ? "0.01" : "1"}
           />
         </div>
       )}
