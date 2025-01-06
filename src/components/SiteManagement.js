@@ -126,6 +126,7 @@ const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
           onChange={(e) => handleInputChange('measureType', e.target.value)}
         >
           <option value="square_meters">Mètres carrés (m²)</option>
+          <option value="linear_meters">Mètre Linéaire (ml)</option>
           <option value="units">Unités</option>
           <option value="fixed_price">Forfait</option>
         </select>
