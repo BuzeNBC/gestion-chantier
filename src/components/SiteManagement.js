@@ -54,7 +54,9 @@ const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
     isCustomTask: false,
     searchTerm: '',
     selectedRoom: '',
-    measureType: 'square_meters', // square_meters, units, fixed_price
+    customRoom: '',      // Nouveau champ pour la pièce personnalisée
+    isCustomRoom: false, // Nouveau champ pour indiquer une pièce personnalisée
+    measureType: 'square_meters',
     quantity: ''
   });
   
@@ -71,8 +73,9 @@ const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
 
   const handleSubmit = () => {
     const taskDescription = formData.isCustomTask ? formData.customTask : formData.selectedTask;
+    const roomName = formData.isCustomRoom ? formData.customRoom : formData.selectedRoom;
     
-    if (!formData.selectedTrade || !taskDescription || !formData.selectedRoom) {
+    if (!formData.selectedTrade || !taskDescription || !roomName) {
       alert('Veuillez remplir tous les champs obligatoires');
       return;
     }
@@ -80,7 +83,7 @@ const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
     const taskData = {
       description: taskDescription,
       tradeId: formData.selectedTrade,
-      room: formData.selectedRoom,
+      room: roomName,
       completed: false,
       isCustom: formData.isCustomTask,
       measureType: formData.measureType,
@@ -128,19 +131,48 @@ const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
         </select>
       </div>
 
-      {/* Sélection de la pièce */}
+      {/* Section Pièce avec option personnalisée */}
       <div>
-        <label className="block text-sm font-medium mb-1">Pièce</label>
-        <select
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg"
-          value={formData.selectedRoom}
-          onChange={(e) => handleInputChange('selectedRoom', e.target.value)}
-        >
-          <option value="">Sélectionner une pièce</option>
-          {defaultRooms.map(room => (
-            <option key={room} value={room}>{room}</option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2 mb-2">
+          <input
+            type="checkbox"
+            id="custom-room"
+            checked={formData.isCustomRoom}
+            onChange={(e) => {
+              handleInputChange('isCustomRoom', e.target.checked);
+              if (e.target.checked) {
+                handleInputChange('selectedRoom', '');
+              } else {
+                handleInputChange('customRoom', '');
+              }
+            }}
+            className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+          />
+          <label htmlFor="custom-room" className="text-sm text-gray-600">
+            Créer une nouvelle pièce
+          </label>
+        </div>
+
+        {formData.isCustomRoom ? (
+          <input
+            type="text"
+            placeholder="Nom de la nouvelle pièce"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+            value={formData.customRoom}
+            onChange={(e) => handleInputChange('customRoom', e.target.value)}
+          />
+        ) : (
+          <select
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg"
+            value={formData.selectedRoom}
+            onChange={(e) => handleInputChange('selectedRoom', e.target.value)}
+          >
+            <option value="">Sélectionner une pièce</option>
+            {defaultRooms.map(room => (
+              <option key={room} value={room}>{room}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Quantité (pour m² et unités) */}
@@ -161,19 +193,19 @@ const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
       )}
 
       {/* Choix entre tâche existante ou personnalisée */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 mb-2">
         <input
           type="checkbox"
           id="custom-task"
           checked={formData.isCustomTask}
           onChange={(e) => {
-            setFormData(prev => ({
-              ...prev,
-              isCustomTask: e.target.checked,
-              selectedTask: '',
-              searchTerm: '',
-              customTask: e.target.checked ? prev.customTask : ''
-            }));
+            handleInputChange('isCustomTask', e.target.checked);
+            if (e.target.checked) {
+              handleInputChange('selectedTask', '');
+              handleInputChange('searchTerm', '');
+            } else {
+              handleInputChange('customTask', '');
+            }
           }}
           className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
         />
