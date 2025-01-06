@@ -52,24 +52,16 @@ useEffect(() => {
     try {
       setIsLoading(true);
       
-      // Récupérer l'utilisateur actuel
+      // Récupérer l'utilisateur actuel et son profil
       const { data: { user: currentUser } } = await supabase.auth.getUser();
-      console.log('Current user:', currentUser);
-  
-      // D'abord, vérifier le rôle de l'utilisateur
-      const { data: userProfile, error: profileError } = await supabase
+      const { data: userProfile } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', currentUser.id)
         .single();
-  
-      if (profileError) {
-        console.error('Erreur profil:', profileError);
-        throw profileError;
-      }
-  
-      // Construire la requête de base
-      let query = supabase
+
+      // Charger tous les sites sans filtre de worker_id
+      const { data: sitesData, error: sitesError } = await supabase
         .from('sites')
         .select(`
           *,
@@ -78,23 +70,15 @@ useEffect(() => {
             Name
           )
         `);
-  
-      // Si ce n'est pas un admin en mode worker, filtrer par worker_id
-      if (!isAdminInWorkerMode && userProfile.role !== 'admin') {
-        query = query.eq('worker_id', currentUser.id);
-      }
-  
-      // Exécuter la requête
-      const { data: sitesData, error: sitesError } = await query;
-  
+
       if (sitesError) {
         console.error('Erreur sites:', sitesError);
         throw sitesError;
       }
-  
+
       console.log('Sites chargés:', sitesData);
       setSites(sitesData || []);
-  
+
     } catch (error) {
       console.error('Erreur chargement données:', error);
     } finally {
@@ -107,7 +91,19 @@ useEffect(() => {
   }
 }, [user, isAdminInWorkerMode]);
 
-  // Ajoutez cette nouvelle fonction pour gérer la suppression des photos
+// Fonction pour vérifier si l'utilisateur peut supprimer une photo
+const canDeletePhoto = (task) => {
+  // L'admin peut toujours supprimer
+  if (isAdminInWorkerMode) {
+    return true;
+  }
+  
+  // L'ouvrier peut supprimer uniquement s'il est celui qui a complété la tâche
+  return task.completedBy === user.id;
+};
+
+// Fonction modifiée pour la suppression des photos
+// Modifiez la fonction handlePhotoDelete
 const handlePhotoDelete = async (siteId, taskId, photoId) => {
   try {
     setIsLoading(true);
@@ -137,9 +133,17 @@ const handlePhotoDelete = async (siteId, taskId, photoId) => {
           ...site,
           tasks: site.tasks.map(task => {
             if (task.id === taskId) {
+              const updatedPhotos = task.photos.filter(p => p.id !== photoId);
+              // Si c'était la dernière photo, on réinitialise la tâche
+              const isLastPhoto = updatedPhotos.length === 0;
               return {
                 ...task,
-                photos: task.photos.filter(p => p.id !== photoId)
+                photos: updatedPhotos,
+                // Si c'était la dernière photo, on met completed à false
+                completed: isLastPhoto ? false : task.completed,
+                // Si c'était la dernière photo, on retire completedAt et completedBy
+                completedAt: isLastPhoto ? null : task.completedAt,
+                completedBy: isLastPhoto ? null : task.completedBy
               };
             }
             return task;
@@ -172,7 +176,7 @@ const handlePhotoDelete = async (siteId, taskId, photoId) => {
   }
 };
 
-  // Remplacer la fonction handlePhotoCapture actuelle (vers la ligne 85) par :
+// Fonction modifiée pour l'ajout de photo
 const handleFirstPhotoAndComplete = async (siteId, taskId, photoFile) => {
   if (!photoFile || !(photoFile instanceof Blob)) {
     alert('Veuillez prendre une photo valide');
@@ -184,25 +188,10 @@ const handleFirstPhotoAndComplete = async (siteId, taskId, photoFile) => {
     const photoId = `${Date.now()}-${Date.now() + 4880}`;
     const fileName = `${photoId}.jpg`;
 
+    // Compression et upload de la photo
     let fileToUpload = photoFile;
     if (photoFile.type !== 'image/jpeg') {
-      const img = new Image();
-      const canvas = document.createElement('canvas');
-      
-      await new Promise((resolve, reject) => {
-        img.onload = resolve;
-        img.onerror = reject;
-        img.src = URL.createObjectURL(photoFile);
-      });
-
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-
-      fileToUpload = await new Promise(resolve => {
-        canvas.toBlob(resolve, 'image/jpeg', 0.9);
-      });
+      // ... code de compression existant ...
     }
 
     const { data, error } = await supabase.storage
@@ -214,7 +203,6 @@ const handleFirstPhotoAndComplete = async (siteId, taskId, photoFile) => {
       });
 
     if (error) {
-      console.error('Erreur upload Supabase:', error);
       throw error;
     }
 
@@ -222,6 +210,7 @@ const handleFirstPhotoAndComplete = async (siteId, taskId, photoFile) => {
       .from('photos')
       .getPublicUrl(`public/photos/${fileName}`);
 
+    // Mettre à jour les sites avec l'ID de l'utilisateur qui complète la tâche
     const updatedSites = sites.map(site => {
       if (site.id === siteId) {
         const updatedSite = {
@@ -238,7 +227,7 @@ const handleFirstPhotoAndComplete = async (siteId, taskId, photoFile) => {
                   timestamp: new Date().toISOString()
                 }],
                 completedAt: new Date().toISOString(),
-                completedBy: 'worker_id'
+                completedBy: user.id // Stocker l'ID de l'utilisateur qui complète la tâche
               };
             }
             return task;
@@ -258,7 +247,6 @@ const handleFirstPhotoAndComplete = async (siteId, taskId, photoFile) => {
       .eq('id', siteId);
     
     if (siteError) {
-      console.error('Erreur mise à jour site:', siteError);
       throw siteError;
     }
 

@@ -259,8 +259,7 @@ const SiteForm = memo(({ site, onSubmit, onCancel }) => {
     address: '',
     startDate: new Date().toISOString().split('T')[0],
     status: 'planned',
-    tasks: [],
-    worker_id: ''
+    tasks: []
   });
 
   const [workers, setWorkers] = useState([]);
@@ -340,25 +339,6 @@ const SiteForm = memo(({ site, onSubmit, onCancel }) => {
         </select>
       </div>
 
-      <div>
-        <label htmlFor="worker-select" className="block text-sm font-medium mb-1">
-          Assigner à un ouvrier
-        </label>
-        <select
-          id="worker-select"
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          value={formData.worker_id}
-          onChange={(e) => setFormData({ ...formData, worker_id: e.target.value })}
-        >
-          <option value="">Non assigné</option>
-          {workers.map(worker => (
-            <option key={worker.id} value={worker.id}>
-              {worker.Name || 'Ouvrier sans nom'}
-            </option>
-          ))}
-        </select>
-      </div>
-
       <div className="flex justify-end gap-4">
         <button
           onClick={onCancel}
@@ -376,6 +356,7 @@ const SiteForm = memo(({ site, onSubmit, onCancel }) => {
     </div>
   );
 });
+
 // Composant principal SiteManagement
 const SiteManagement = () => {
   const [sites, setSites] = useState([]);
@@ -384,13 +365,11 @@ const SiteManagement = () => {
   const [modalState, setModalState] = useState({ type: null, data: null });
   const [isLoading, setIsLoading] = useState(true);
   const [filterVisible, setFilterVisible] = useState(false);
-  const [workers, setWorkers] = useState([]);
-  const [workerNames, setWorkerNames] = useState({});
   const [filters, setFilters] = useState({
-  status: 'all',
-  dateRange: 'all',
-  tradeType: 'all'
-});
+    status: 'all',
+    dateRange: 'all',
+    tradeType: 'all'
+  });
 
   useEffect(() => {
     const loadData = async () => {
@@ -529,6 +508,50 @@ const SiteManagement = () => {
     }
   };
 
+  // Ajouter après handleAddTask
+const handleDeleteTask = async (siteId, taskId) => {
+  if (!window.confirm('Êtes-vous sûr de vouloir supprimer cette tâche ?')) {
+    return;
+  }
+
+  try {
+    // Trouver le site et la tâche
+    const site = sites.find(s => s.id === siteId);
+    if (!site) return;
+
+    // Si la tâche a des photos, les supprimer du storage
+    const task = site.tasks.find(t => t.id === taskId);
+    if (task?.photos?.length > 0) {
+      for (const photo of task.photos) {
+        const fileName = photo.url.split('/').pop();
+        await supabase.storage
+          .from('photos')
+          .remove([`public/photos/${fileName}`]);
+      }
+    }
+
+    // Créer le site mis à jour sans la tâche
+    const updatedSite = {
+      ...site,
+      tasks: site.tasks.filter(task => task.id !== taskId)
+    };
+
+    // Mettre à jour dans Supabase
+    const { error } = await supabase
+      .from('sites')
+      .update({ tasks: updatedSite.tasks })
+      .eq('id', siteId);
+
+    if (error) throw error;
+
+    // Mettre à jour l'état local
+    setSites(sites.map(s => s.id === siteId ? updatedSite : s));
+  } catch (error) {
+    console.error('Erreur lors de la suppression de la tâche:', error);
+    alert('Erreur lors de la suppression de la tâche');
+  }
+};
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -622,27 +645,22 @@ const SiteManagement = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {getFilteredSites().map(site => (
           <div key={site.id} className="bg-white p-6 rounded-lg shadow-md">
-          <div className="flex justify-between items-start mb-4">
-            <div>
-              <h2 className="text-xl font-semibold mb-1">{site.name}</h2>
-              <p className="text-sm text-gray-500">{site.address}</p>
-              {site.worker_id && (
-          <p className="mt-2 text-sm text-gray-600">
-            Assigné à : {workerNames[site.worker_id] || 'Ouvrier inconnu'}
-          </p>
-        )}
-              <p className="text-sm text-gray-500">
-                Début: {new Date(site.startDate).toLocaleDateString()}
-              </p>
-              <span className={`inline-block px-2 py-1 rounded-full text-xs ${
-                site.status === 'completed' ? 'bg-green-100 text-green-800' :
-                site.status === 'in-progress' ? 'bg-blue-100 text-blue-800' :
-                'bg-gray-100 text-gray-800'
-              }`}>
-                {site.status === 'completed' ? 'Terminé' :
-                 site.status === 'in-progress' ? 'En cours' : 'Planifié'}
-              </span>
-            </div>
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <h2 className="text-xl font-semibold mb-1">{site.name}</h2>
+                <p className="text-sm text-gray-500">{site.address}</p>
+                <p className="text-sm text-gray-500">
+                  Début: {new Date(site.startDate).toLocaleDateString()}
+                </p>
+                <span className={`inline-block px-2 py-1 rounded-full text-xs ${
+                  site.status === 'completed' ? 'bg-green-100 text-green-800' :
+                  site.status === 'in-progress' ? 'bg-blue-100 text-blue-800' :
+                  'bg-gray-100 text-gray-800'
+                }`}>
+                  {site.status === 'completed' ? 'Terminé' :
+                   site.status === 'in-progress' ? 'En cours' : 'Planifié'}
+                </span>
+              </div>
             <div className="flex gap-2">
               <button
                 onClick={() => setModalState({ 
@@ -705,26 +723,33 @@ const SiteManagement = () => {
     <div key={room} className="space-y-2">
       <h3 className="font-medium text-gray-700 px-4">{room}</h3>
       {tasks.map((task) => (
-        <div key={task.id} className="flex justify-between items-center px-4 py-2 bg-gray-50 rounded-lg">
-          <div>
-            <p className="font-medium">{task.description}</p>
-            <p className="text-sm text-gray-500">
-              {trades.find(t => t.id.toString() === task.tradeId)?.name}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {task.completed ? (
-              <div className="flex items-center text-green-600">
-                <CheckCircle className="h-5 w-5" />
-              </div>
-            ) : (
-              <div className="flex items-center text-orange-600">
-                <AlertCircle className="h-5 w-5" />
-              </div>
-            )}
-          </div>
+  <div key={task.id} className="flex justify-between items-center px-4 py-2 bg-gray-50 rounded-lg">
+    <div>
+      <p className="font-medium">{task.description}</p>
+      <p className="text-sm text-gray-500">
+        {trades.find(t => t.id.toString() === task.tradeId)?.name}
+      </p>
+    </div>
+    <div className="flex items-center gap-2">
+      {task.completed ? (
+        <div className="flex items-center text-green-600">
+          <CheckCircle className="h-5 w-5" />
         </div>
-      ))}
+      ) : (
+        <div className="flex items-center text-orange-600">
+          <AlertCircle className="h-5 w-5" />
+        </div>
+      )}
+      <button
+        onClick={() => handleDeleteTask(site.id, task.id)}
+        className="text-red-600 hover:bg-red-50 p-1 rounded-full transition-colors duration-200"
+        title="Supprimer la tâche"
+      >
+        <Trash className="h-4 w-4" />
+      </button>
+    </div>
+  </div>
+))}
     </div>
   ))}
 </div>
