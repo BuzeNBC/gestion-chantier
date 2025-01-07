@@ -93,7 +93,7 @@ const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
       isCustom: formData.isCustomTask,
       measureType: measureType,
       isCustomMeasureType: formData.isCustomMeasureType,
-      quantity: measureType !== 'fixed_price' ? parseFloat(formData.quantity) : null
+      quantity: parseFloat(formData.quantity) || null
     };
 
     onSubmit(taskData);
@@ -212,13 +212,14 @@ const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
         )}
       </div>
 
-      {/* Quantité */}
-      {(!formData.isCustomMeasureType && formData.measureType !== 'fixed_price') || (formData.isCustomMeasureType) && (
+      {/* Quantité - toujours affichée */}
+      {(
         <div>
           <label className="block text-sm font-medium mb-1">
             {formData.isCustomMeasureType ? `Quantité (${formData.customMeasureType})` :
              formData.measureType === 'square_meters' ? 'Surface en m²' :
              formData.measureType === 'linear_meters' ? 'Longueur en ml' :
+             formData.measureType === 'fixed_price' ? 'Montant forfaitaire (€)' :
              'Nombre d\'unités'}
           </label>
           <input
