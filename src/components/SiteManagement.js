@@ -447,13 +447,29 @@ const SiteManagement = () => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [sitesData, tradesData] = await Promise.all([
-          DBService.getAll(STORES.SITES),
-          DBService.getAll(STORES.TRADES)
-        ]);
+        setIsLoading(true);
         
-        setSites(sitesData || []);
+        // Récupérer les données de Supabase
+        const { data: sitesData, error: sitesError } = await supabase
+          .from('sites')
+          .select(`
+            *,
+            profiles:worker_id(
+              id,
+              Name
+            )
+          `)
+          .not('status', 'eq', 'completed');
+  
+        if (sitesError) throw sitesError;
+        
+        // Récupérer les trades
+        const tradesData = await DBService.getAll(STORES.TRADES);
+  
+        // S'assurer que sitesData est un tableau
+        setSites(Array.isArray(sitesData) ? sitesData : []);
         setTrades(tradesData || []);
+        
       } catch (error) {
         console.error('Erreur chargement données:', error);
       } finally {
@@ -465,11 +481,13 @@ const SiteManagement = () => {
   }, []);
 
   const getFilteredSites = () => {
+    if (!Array.isArray(sites)) return [];
+    
     return sites.filter(site => {
       const matchesSearch = (
         site.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         site.address.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        site.tasks.some(task => task.description.toLowerCase().includes(searchTerm.toLowerCase()))
+        site.tasks?.some(task => task.description.toLowerCase().includes(searchTerm.toLowerCase()))
       );
   
       const matchesStatus = filters.status === 'all' || site.status === filters.status;
@@ -493,12 +511,12 @@ const SiteManagement = () => {
       })();
   
       const matchesTrade = filters.tradeType === 'all' || 
-        site.tasks.some(task => task.tradeId === filters.tradeType);
+        site.tasks?.some(task => task.tradeId === filters.tradeType);
   
       return matchesSearch && matchesStatus && matchesDate && matchesTrade;
     });
   };
-
+  
   const handleAddSite = async (siteData) => {
     try {
       const newSite = {
@@ -622,6 +640,27 @@ const handleDeleteTask = async (siteId, taskId) => {
   } catch (error) {
     console.error('Erreur lors de la suppression de la tâche:', error);
     alert('Erreur lors de la suppression de la tâche');
+  }
+};
+
+const handleCompleteSite = async (siteId) => {
+  try {
+    const { error } = await supabase
+      .from('sites')
+      .update({
+        status: 'completed',
+        completeddate: new Date().toISOString()
+      })
+      .eq('id', siteId);
+
+    if (error) throw error;
+    
+    // Retirer immédiatement le site de la liste locale
+    setSites(prevSites => prevSites.filter(site => site.id !== siteId));
+    
+  } catch (error) {
+    console.error('Error:', error);
+    alert(`Erreur: ${error.message}`);
   }
 };
 
@@ -762,6 +801,15 @@ const handleDeleteTask = async (siteId, taskId) => {
               >
                 <Trash className="h-5 w-5" />
               </button>
+              {site.status !== 'completed' && (
+    <button
+      onClick={() => handleCompleteSite(site.id)}
+      className="text-green-600 hover:bg-green-50 p-1 rounded transition duration-300"
+      title="Marquer comme terminé"
+    >
+      <CheckCircle className="h-5 w-5" />
+    </button>
+  )}
             </div>
           </div>
           <div className="mt-4">

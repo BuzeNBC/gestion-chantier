@@ -3,8 +3,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AuthPage from './components/auth/AuthPage';
 import AdminDashboard from './components/AdminDashboard';
+import CompletedSites from './components/CompletedSites';
 
-// Composant PrivateRoute pour protéger les routes
 const PrivateRoute = ({ children }) => {
   const { user, loading } = useAuth();
 
@@ -16,39 +16,26 @@ const PrivateRoute = ({ children }) => {
     );
   }
 
-  if (!user) {
-    return <Navigate to="/login" />;
-  }
-
-  return children;
+  return user ? children : <Navigate to="/login" />;
 };
 
 function App() {
-  const { loading } = useAuth();
-  console.log("App rendering, loading state:", loading);
-
   return (
     <AuthProvider>
       <Router>
-        <div className="min-h-screen bg-gray-100"> {/* Ajout d'un fond visible */}
+        <div className="min-h-screen bg-gray-100">
           <Routes>
-            <Route path="/login" element={
-              <div>
-                <p className="text-black">Login page</p> {/* Test visible */}
-                <AuthPage />
-              </div>
+            <Route path="/login" element={<AuthPage />} />
+            <Route path="/" element={
+              <PrivateRoute>
+                <AdminDashboard />
+              </PrivateRoute>
             } />
-            <Route
-              path="/"
-              element={
-                <PrivateRoute>
-                  <div>
-                    <p className="text-black">Dashboard page</p> {/* Test visible */}
-                    <AdminDashboard />
-                  </div>
-                </PrivateRoute>
-              }
-            />
+            <Route path="/completed-sites" element={
+              <PrivateRoute>
+                <CompletedSites />
+              </PrivateRoute>
+            } />
           </Routes>
         </div>
       </Router>

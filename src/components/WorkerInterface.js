@@ -47,6 +47,9 @@ function WorkerInterface({ isAdminInWorkerMode = false }) {
 const [isAdmin, setIsAdmin] = useState(false);
 
 // Modifiez le useEffect comme suit
+// Dans WorkerInterface.js, modifiez le useEffect pour le chargement des données :
+
+// Dans le useEffect de WorkerInterface.js
 useEffect(() => {
   const loadData = async () => {
     try {
@@ -60,7 +63,7 @@ useEffect(() => {
         .eq('id', currentUser.id)
         .single();
 
-      // Charger tous les sites sans filtre de worker_id
+      // Charger tous les sites NON TERMINÉS
       const { data: sitesData, error: sitesError } = await supabase
         .from('sites')
         .select(`
@@ -69,14 +72,14 @@ useEffect(() => {
             id,
             Name
           )
-        `);
+        `)
+        .not('status', 'eq', 'completed'); // Ajouter ce filtre pour exclure les chantiers terminés
 
       if (sitesError) {
         console.error('Erreur sites:', sitesError);
         throw sitesError;
       }
 
-      console.log('Sites chargés:', sitesData);
       setSites(sitesData || []);
 
     } catch (error) {
@@ -467,12 +470,12 @@ const handleFirstPhotoAndComplete = async (siteId, taskId, photoFile) => {
   
         // Date alignée à droite
         if (task.completedAt) {
-          const completionDate = new Date(task.completedAt).toLocaleDateString('fr-FR', {
+          const completeddate = new Date(task.completedAt).toLocaleDateString('fr-FR', {
             day: 'numeric',
             month: 'long',
             year: 'numeric'
           });
-          const dateText = `Réalisé le ${completionDate}`;
+          const dateText = `Réalisé le ${completeddate}`;
           const dateWidth = helveticaOblique.widthOfTextAtSize(dateText, 10);
           
           page.drawText(cleanText(dateText), {

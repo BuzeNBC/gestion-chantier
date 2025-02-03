@@ -7,13 +7,15 @@ import {
   Hammer, 
   Building2, 
   LogOut,
-  UserCog
+  UserCog,
+  CheckCircle
 } from 'lucide-react';
 import { DBService } from '../services/dbService';
 import TradesContent from './TradesContent';
 import SiteManagement from './SiteManagement';
 import WorkerInterface from './WorkerInterface';
 import LoginModal from './LoginModal';
+import CompletedSites from './CompletedSites';
 
 function DashboardContent() {
   const [sites, setSites] = useState([]);
@@ -254,7 +256,17 @@ function AdminDashboard() {
               {userRole === 'admin' ? 'Mode ouvrier' : 'Mode admin'}
             </button>
           )}
-
+          {userRole === 'admin' && (
+  <button
+    onClick={() => setActivePage('completed')}
+    className={`w-full flex items-center px-4 py-2 rounded-lg ${
+      activePage === 'completed' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100'
+    } transition duration-300`}
+  >
+    <CheckCircle className="h-5 w-5 mr-2" />
+    Chantiers terminés
+  </button>
+)}
           <button
             onClick={handleLogout}
             className="w-full flex items-center px-4 py-2 rounded-lg text-red-600 hover:bg-red-50 transition duration-300"
@@ -271,6 +283,7 @@ function AdminDashboard() {
             {activePage === 'dashboard' && <DashboardContent />}
             {activePage === 'trades' && <TradesContent />}
             {activePage === 'sites' && <SiteManagement />}
+            {activePage === 'completed' && <CompletedSites />}
           </>
         ) : (
           <WorkerInterface isAdminInWorkerMode={realUserRole === 'admin'} />
