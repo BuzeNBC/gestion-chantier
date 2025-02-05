@@ -25,36 +25,23 @@ export class DBService {
   static async store(storeName, data) {
     try {
       console.log('Tentative de stockage dans:', storeName);
-      console.log('Données à stocker:', data);
-
-      if (!supabase) {
-        throw new Error('Le client Supabase n\'est pas initialisé');
+      
+      // Supprimer les propriétés de relation qui ne font pas partie du schéma
+      const cleanData = { ...data };
+      if (storeName === 'sites') {
+        delete cleanData.profiles;
       }
-
+  
       const { data: result, error } = await supabase
         .from(storeName)
-        .upsert([data])
+        .upsert([cleanData])
         .select();
       
-      if (error) {
-        console.error('Erreur Supabase:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code
-        });
-        throw error;
-      }
-
-      console.log('Données stockées avec succès:', result);
-      return result?.[0] || data;
+      if (error) throw error;
+      
+      return result?.[0] || cleanData;
     } catch (error) {
-      console.error(`Erreur détaillée lors du stockage dans ${storeName}:`, {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code
-      });
+      console.error(`Erreur lors du stockage dans ${storeName}:`, error);
       throw error;
     }
   }

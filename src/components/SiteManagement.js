@@ -56,7 +56,7 @@ const TaskForm = memo(({ onSubmit, onCancel, trades }) => {
     selectedRoom: '',
     customRoom: '',
     isCustomRoom: false,
-    measureType: 'square_meters',
+    measureType: trades[0]?.measure_type || 'square_meters',
     customMeasureType: '',
     isCustomMeasureType: false,
     quantity: ''
@@ -449,12 +449,12 @@ const SiteManagement = () => {
       try {
         setIsLoading(true);
         
-        // Récupérer les données de Supabase
+        // Récupérer les sites avec les profils associés
         const { data: sitesData, error: sitesError } = await supabase
           .from('sites')
           .select(`
             *,
-            profiles:worker_id(
+            worker:worker_id (
               id,
               Name
             )
@@ -464,10 +464,13 @@ const SiteManagement = () => {
         if (sitesError) throw sitesError;
         
         // Récupérer les trades
-        const tradesData = await DBService.getAll(STORES.TRADES);
+        const { data: tradesData, error: tradesError } = await supabase
+          .from('trades')
+          .select('*');
   
-        // S'assurer que sitesData est un tableau
-        setSites(Array.isArray(sitesData) ? sitesData : []);
+        if (tradesError) throw tradesError;
+  
+        setSites(sitesData || []);
         setTrades(tradesData || []);
         
       } catch (error) {
@@ -577,21 +580,40 @@ const SiteManagement = () => {
       const site = sites.find(s => s.id === siteId);
       if (!site) return;
   
-      const updatedSite = {
-        ...site,
-        tasks: [
-          ...site.tasks,
-          {
-            ...taskData,
-            id: Date.now().toString(),
-            completed: false,
-            room: taskData.room // Ajout de la pièce
-          }
-        ]
+      // Créer la nouvelle tâche
+      const newTask = {
+        id: Date.now().toString(),
+        description: taskData.description,
+        tradeId: taskData.tradeId,
+        room: taskData.room,
+        completed: false,
+        measureType: taskData.measureType,
+        quantity: taskData.quantity,
+        created_at: new Date().toISOString()
       };
-
-      await DBService.store(STORES.SITES, updatedSite);
-      setSites(sites.map(s => s.id === siteId ? updatedSite : s));
+  
+      // Préparer le nouveau tableau de tâches
+      const updatedTasks = [...site.tasks, newTask];
+  
+      // Mettre à jour directement via Supabase
+      const { data, error } = await supabase
+        .from('sites')
+        .update({ 
+          tasks: updatedTasks,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', siteId)
+        .select();
+  
+      if (error) throw error;
+  
+      // Mettre à jour l'état local
+      setSites(sites.map(s => 
+        s.id === siteId 
+          ? { ...s, tasks: updatedTasks }
+          : s
+      ));
+      
       setModalState({ type: null });
     } catch (error) {
       console.error('Erreur ajout tâche:', error);
@@ -649,13 +671,13 @@ const handleCompleteSite = async (siteId) => {
       .from('sites')
       .update({
         status: 'completed',
-        completeddate: new Date().toISOString()
+        completeddate: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       })
       .eq('id', siteId);
 
     if (error) throw error;
     
-    // Retirer immédiatement le site de la liste locale
     setSites(prevSites => prevSites.filter(site => site.id !== siteId));
     
   } catch (error) {
