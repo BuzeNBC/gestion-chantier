@@ -181,40 +181,11 @@ const handlePhotoDelete = async (siteId, taskId, photoId) => {
 };
 
 // Fonction modifiée pour l'ajout de photo
-const handleFirstPhotoAndComplete = async (siteId, taskId, photoFile) => {
-  if (!photoFile || !(photoFile instanceof Blob)) {
-    alert('Veuillez prendre une photo valide');
-    return;
-  }
-
+const handleFirstPhotoAndComplete = async (siteId, taskId, photoUrl, photoId) => {
   try {
     setIsLoading(true);
-    const photoId = `${Date.now()}-${Date.now() + 4880}`;
-    const fileName = `${photoId}.jpg`;
 
-    // Compression et upload de la photo
-    let fileToUpload = photoFile;
-    if (photoFile.type !== 'image/jpeg') {
-      // ... code de compression existant ...
-    }
-
-    const { data, error } = await supabase.storage
-      .from('photos')
-      .upload(`public/photos/${fileName}`, fileToUpload, {
-        contentType: 'image/jpeg',
-        upsert: true,
-        cacheControl: '3600'
-      });
-
-    if (error) {
-      throw error;
-    }
-
-    const { data: { publicUrl } } = supabase.storage
-      .from('photos')
-      .getPublicUrl(`public/photos/${fileName}`);
-
-    // Mettre à jour les sites avec l'ID de l'utilisateur qui complète la tâche
+    // Mettre à jour les sites
     const updatedSites = sites.map(site => {
       if (site.id === siteId) {
         const updatedSite = {
@@ -227,11 +198,11 @@ const handleFirstPhotoAndComplete = async (siteId, taskId, photoFile) => {
                 completed: true,
                 photos: [...photos, {
                   id: photoId,
-                  url: publicUrl,
+                  url: photoUrl,
                   timestamp: new Date().toISOString()
                 }],
                 completedAt: new Date().toISOString(),
-                completedBy: user.id // Stocker l'ID de l'utilisateur qui complète la tâche
+                completedBy: user.id
               };
             }
             return task;
@@ -250,9 +221,7 @@ const handleFirstPhotoAndComplete = async (siteId, taskId, photoFile) => {
       .update({ tasks: updatedSites.find(s => s.id === siteId).tasks })
       .eq('id', siteId);
     
-    if (siteError) {
-      throw siteError;
-    }
+    if (siteError) throw siteError;
 
     setSites(updatedSites);
     setModalState({ type: null });
@@ -756,7 +725,9 @@ const sendReportByEmail = async (site, email) => {
                     </div>
                     {!task.completed && (
                       <PhotoUploadButton 
-                      onFileSelected={(file) => handleTaskCompletion(selectedSite.id, task.id, file)} 
+                      siteId={selectedSite.id}
+                      taskId={task.id}
+                      onFileSelected={(url, fileId) => handleFirstPhotoAndComplete(selectedSite.id, task.id, url, fileId)}
                     />
                     )}
                   </div>
@@ -796,9 +767,10 @@ const sendReportByEmail = async (site, email) => {
         </div>
       ))}
       <PhotoUploadButton 
-  onFileSelected={(file) => handleFirstPhotoAndComplete(selectedSite.id, task.id, file)}
-  className="mt-2" 
-/>
+    siteId={selectedSite.id}
+    taskId={task.id}
+    onFileSelected={(url, fileId) => handleFirstPhotoAndComplete(selectedSite.id, task.id, url, fileId)}
+  />
     </div>
   </div>
 )}
