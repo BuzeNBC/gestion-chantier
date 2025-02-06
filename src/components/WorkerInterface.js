@@ -6,6 +6,7 @@ import { Modal } from './Modal';
 import { supabase } from '../services/supabase';
 import EmailPDFManager from './EmailPDFManager';
 import { useAuth } from '../contexts/AuthContext';
+import PhotoUploadButton from './PhotoUploadButton';
 
 function WorkerInterface({ isAdminInWorkerMode = false }) {
   const [sites, setSites] = useState([]);
@@ -754,22 +755,9 @@ const sendReportByEmail = async (site, email) => {
                       </div>
                     </div>
                     {!task.completed && (
-                      <label className="relative overflow-hidden flex items-center gap-2 bg-blue-600 text-white px-3 py-1 rounded-lg hover:bg-blue-700 cursor-pointer">
-                        <Camera className="h-4 w-4" />
-                        <span>Valider</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          capture="environment"
-                          className="absolute inset-0 opacity-0 cursor-pointer"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) {
-                              handleTaskCompletion(selectedSite.id, task.id, file);
-                            }
-                          }}
-                        />
-                      </label>
+                      <PhotoUploadButton 
+                      onFileSelected={(file) => handleTaskCompletion(selectedSite.id, task.id, file)} 
+                    />
                     )}
                   </div>
                   {task.completedAt && (
@@ -807,21 +795,10 @@ const sendReportByEmail = async (site, email) => {
           </button>
         </div>
       ))}
-      <label className="text-blue-600 hover:text-blue-800 cursor-pointer text-sm">
-        + Ajouter une photo
-        <input
-          type="file"
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) {
-              handleFirstPhotoAndComplete(selectedSite.id, task.id, file);
-            }
-          }}
-        />
-      </label>
+      <PhotoUploadButton 
+  onFileSelected={(file) => handleFirstPhotoAndComplete(selectedSite.id, task.id, file)}
+  className="mt-2" 
+/>
     </div>
   </div>
 )}
