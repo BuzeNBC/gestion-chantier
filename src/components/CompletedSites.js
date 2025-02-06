@@ -52,6 +52,23 @@ const CompletedSites = () => {
     });
   };
 
+  const sanitizeText = (text) => {
+    if (text === null || text === undefined) return '';
+    text = String(text);
+    return text
+      .replace(/[≥≤]/g, '=')
+      .replace(/[éèêëÉÈÊË]/g, 'e')
+      .replace(/[àâäÀÂÄ]/g, 'a')
+      .replace(/[ùûüÙÛÜ]/g, 'u')
+      .replace(/[îïÎÏ]/g, 'i')
+      .replace(/[ôöÔÖ]/g, 'o')
+      .replace(/[çÇ]/g, 'c')
+      .replace(/œ/g, 'oe')
+      .replace(/[^\x20-\x7E]/g, '')
+      .replace(/[\u2018\u2019]/g, "'")
+      .replace(/[\u201C\u201D]/g, '"');
+  };
+
   const generatePDF = async (site) => {
     if (!site || pdfGenerating) return;
   
@@ -67,7 +84,6 @@ const CompletedSites = () => {
       let page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
       let yPosition = PAGE_HEIGHT - MARGIN;
   
-      // Polices et couleurs
       const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
       const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
       const primaryColor = rgb(0.12, 0.29, 0.49);
@@ -83,7 +99,7 @@ const CompletedSites = () => {
         color: primaryColor,
       });
 
-      page.drawText("RAPPORT DE FIN DE CHANTIER", {
+      page.drawText(sanitizeText("RAPPORT DE FIN DE CHANTIER"), {
         x: MARGIN,
         y: PAGE_HEIGHT - 50,
         size: 24,
@@ -93,8 +109,7 @@ const CompletedSites = () => {
 
       yPosition = PAGE_HEIGHT - 150;
 
-      // Informations du chantier
-      page.drawText(`Chantier: ${site.name}`, {
+      page.drawText(sanitizeText(`Chantier: ${site.name}`), {
         x: MARGIN,
         y: yPosition,
         size: 16,
@@ -104,7 +119,7 @@ const CompletedSites = () => {
 
       yPosition -= 30;
 
-      page.drawText(`Adresse: ${site.address}`, {
+      page.drawText(sanitizeText(`Adresse: ${site.address}`), {
         x: MARGIN,
         y: yPosition,
         size: 12,
@@ -117,7 +132,7 @@ const CompletedSites = () => {
       const startDate = new Date(site.startDate).toLocaleDateString('fr-FR');
       const completionDate = new Date(site.completeddate).toLocaleDateString('fr-FR');
       
-      page.drawText(`Date de début: ${startDate}`, {
+      page.drawText(sanitizeText(`Date de debut: ${startDate}`), {
         x: MARGIN,
         y: yPosition,
         size: 12,
@@ -127,7 +142,7 @@ const CompletedSites = () => {
 
       yPosition -= 20;
 
-      page.drawText(`Date de fin: ${completionDate}`, {
+      page.drawText(sanitizeText(`Date de fin: ${completionDate}`), {
         x: MARGIN,
         y: yPosition,
         size: 12,
@@ -137,11 +152,10 @@ const CompletedSites = () => {
 
       yPosition -= 40;
 
-      // Statistiques du chantier
       const totalTasks = site.tasks?.length || 0;
       const completedTasks = site.tasks?.filter(task => task.completed)?.length || 0;
       
-      page.drawText("Résumé du chantier", {
+      page.drawText(sanitizeText("Resume du chantier"), {
         x: MARGIN,
         y: yPosition,
         size: 14,
@@ -151,7 +165,7 @@ const CompletedSites = () => {
 
       yPosition -= 25;
 
-      page.drawText(`Total des tâches: ${totalTasks}`, {
+      page.drawText(sanitizeText(`Total des taches: ${totalTasks}`), {
         x: MARGIN,
         y: yPosition,
         size: 12,
@@ -159,16 +173,14 @@ const CompletedSites = () => {
         color: textColor,
       });
 
-      // Configuration des images comme dans WorkerInterface
       const PHOTO_HEIGHT = 100;
       const PHOTO_WIDTH = (CONTENT_WIDTH - 40) / 2;
       const TASK_PADDING = 15;
       
-      // Photos et tâches
       if (site.tasks && site.tasks.length > 0) {
         yPosition -= 40;
         
-        page.drawText("Détail des tâches réalisées", {
+        page.drawText(sanitizeText("Detail des taches realisees"), {
           x: MARGIN,
           y: yPosition,
           size: 14,
@@ -189,7 +201,6 @@ const CompletedSites = () => {
             yPosition = PAGE_HEIGHT - MARGIN;
           }
 
-          // Fond de la tâche
           page.drawRectangle({
             x: MARGIN,
             y: yPosition,
@@ -198,7 +209,6 @@ const CompletedSites = () => {
             color: rgb(0.98, 0.98, 0.98),
           });
 
-          // Barre latérale
           page.drawRectangle({
             x: MARGIN,
             y: yPosition,
@@ -209,8 +219,7 @@ const CompletedSites = () => {
 
           let currentY = yPosition - 20;
 
-          // Description de la tâche
-          page.drawText(task.description, {
+          page.drawText(sanitizeText(task.description), {
             x: MARGIN + TASK_PADDING,
             y: currentY,
             size: 12,
@@ -226,7 +235,7 @@ const CompletedSites = () => {
               month: 'long',
               year: 'numeric'
             });
-            const dateText = `Réalisé le ${completeddate}`;
+            const dateText = sanitizeText(`Realise le ${completeddate}`);
             const dateWidth = helvetica.widthOfTextAtSize(dateText, 10);
             
             page.drawText(dateText, {
@@ -238,7 +247,6 @@ const CompletedSites = () => {
             });
           }
 
-          // Photos
           if (hasPhotos) {
             currentY -= 15;
             let photoX = MARGIN + TASK_PADDING;
@@ -277,8 +285,9 @@ const CompletedSites = () => {
           }
 
           yPosition -= taskHeight + 10;
+        }
       }
-    }
+
       const pdfBytes = await pdfDoc.save();
       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
@@ -286,10 +295,9 @@ const CompletedSites = () => {
       setPdfUrl(url);
       setPdfBlob(blob);
       
-      // Télécharger automatiquement
       const link = document.createElement('a');
       link.href = url;
-      link.download = `rapport-${site.name.toLowerCase().replace(/\s+/g, '-')}.pdf`;
+      link.download = `rapport-${sanitizeText(site.name).toLowerCase().replace(/\s+/g, '-')}.pdf`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -309,7 +317,7 @@ const CompletedSites = () => {
 
   return (
     <div className="p-8 space-y-8">
-      <h1 className="text-4xl font-bold text-gray-800">Chantiers Terminés</h1>
+      <h1 className="text-4xl font-bold text-gray-800">Chantiers Termines</h1>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-lg shadow-md">
@@ -321,13 +329,13 @@ const CompletedSites = () => {
           <p className="text-3xl font-bold text-green-600">{stats.avgCompletionTime}</p>
         </div>
         <div className="bg-white p-6 rounded-lg shadow-md">
-          <h3 className="text-xl font-semibold text-gray-800 mb-2">Total Tâches</h3>
+          <h3 className="text-xl font-semibold text-gray-800 mb-2">Total Taches</h3>
           <p className="text-3xl font-bold text-purple-600">{stats.totalTasks}</p>
         </div>
       </div>
 
       <div className="bg-white p-6 rounded-lg shadow-md">
-        <h3 className="text-xl font-semibold text-gray-800 mb-4">Durée des Chantiers</h3>
+        <h3 className="text-xl font-semibold text-gray-800 mb-4">Duree des Chantiers</h3>
         <div className="h-96">
           <BarChart width={800} height={300} data={chartData}>
             <CartesianGrid strokeDasharray="3 3" />
@@ -335,7 +343,7 @@ const CompletedSites = () => {
             <YAxis />
             <Tooltip />
             <Legend />
-            <Bar dataKey="duree" fill="#3B82F6" name="Durée (jours)" />
+            <Bar dataKey="duree" fill="#3B82F6" name="Duree (jours)" />
           </BarChart>
         </div>
       </div>
@@ -344,12 +352,12 @@ const CompletedSites = () => {
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50">
-            <tr>
+              <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nom</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Adresse</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ouvrier</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Durée (jours)</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tâches</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Duree (jours)</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Taches</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
@@ -374,7 +382,7 @@ const CompletedSites = () => {
                       {pdfGenerating ? (
                         <>
                           <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                          <span>Génération...</span>
+                          <span>Generation...</span>
                         </>
                       ) : (
                         <>
