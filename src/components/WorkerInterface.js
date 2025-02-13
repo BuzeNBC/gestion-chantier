@@ -695,6 +695,9 @@ const sendReportByEmail = async (site, email) => {
               case 'square_meters':
                 measureText = `${task.quantity || 0} m²`;
                 break;
+              case 'linear_meters':
+                measureText = `${task.quantity || 0} ml`;
+                break;
               case 'units':
                 measureText = `${task.quantity || 0} unité${task.quantity > 1 ? 's' : ''}`;
                 break;
