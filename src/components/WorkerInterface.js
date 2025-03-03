@@ -382,121 +382,138 @@ const handleFirstPhotoAndComplete = async (siteId, taskId, photoUrl, photoId) =>
   
       yPosition = drawHeader(true);
   
-      const drawTask = async (task, startY) => {
-        const hasPhotos = task.photos && task.photos.length > 0;
-        const minHeight = 60;
-        const photoSectionHeight = hasPhotos ? PHOTO_HEIGHT + 10 : 0;
-        const taskHeight = Math.max(minHeight, photoSectionHeight + 50);
+      // Modifiez la fonction drawTask pour mieux gérer la taille et l'espacement dynamiques
+
+const drawTask = async (task, startY) => {
+  const hasPhotos = task.photos && task.photos.length > 0;
+  const photosPerRow = 2;
+  const rows = Math.ceil((task.photos?.length || 0) / photosPerRow);
+  // Définir la hauteur minimale d'une tâche
+  const minHeight = 60;
+  // Calculer la hauteur dynamique en fonction du nombre de photos
+  const photoSectionHeight = hasPhotos ? (PHOTO_HEIGHT + 15) * rows : 0;
+  const taskHeight = Math.max(minHeight, photoSectionHeight + 50);
+
+  // Vérifier s'il faut une nouvelle page
+  if (startY - taskHeight < MARGIN) {
+    page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    startY = drawHeader(false);
+  }
+
+  // Fond de la tâche - ajuster la hauteur en fonction du nombre de photos
+  page.drawRectangle({
+    x: MARGIN,
+    y: startY,
+    width: CONTENT_WIDTH,
+    height: -taskHeight,
+    color: backgroundColor,
+  });
+
+  // Barre latérale
+  page.drawRectangle({
+    x: MARGIN,
+    y: startY,
+    width: 4,
+    height: -taskHeight,
+    color: primaryColor,
+  });
+
+  let currentY = startY - 20;
+
+  // Description et infos
+  const trade = trades.find(t => t.id.toString() === task.tradeId);
+  const tradeText = trade ? ` - ${trade.name}` : '';
   
-        if (startY - taskHeight < MARGIN) {
-          page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-          startY = drawHeader(false);
-        }
-  
-        // Fond de la tâche
-        page.drawRectangle({
-          x: MARGIN,
-          y: startY,
-          width: CONTENT_WIDTH,
-          height: -taskHeight,
-          color: backgroundColor,
-        });
-  
-        // Barre latérale
-        page.drawRectangle({
-          x: MARGIN,
-          y: startY,
-          width: 4,
-          height: -taskHeight,
-          color: primaryColor,
-        });
-  
-        let currentY = startY - 20;
-  
-        // Description et infos
-        const trade = trades.find(t => t.id.toString() === task.tradeId);
-        const tradeText = trade ? ` - ${trade.name}` : '';
+  // Description de la tâche
+  page.drawText(cleanText(task.description), {
+    x: MARGIN + TASK_PADDING,
+    y: currentY,
+    size: 12,
+    font: helveticaBold,
+    color: textColor,
+  });
+
+  currentY -= 18;
+
+  // Localisation et métier
+  const locationText = `${task.room || 'Non spécifié'}${tradeText}`;
+  page.drawText(cleanText(locationText), {
+    x: MARGIN + TASK_PADDING,
+    y: currentY,
+    size: 10,
+    font: helvetica,
+    color: textColor,
+  });
+
+  // Date alignée à droite
+  if (task.completedAt) {
+    const completeddate = new Date(task.completedAt).toLocaleDateString('fr-FR', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+    const dateText = `Réalisé le ${completeddate}`;
+    const dateWidth = helveticaOblique.widthOfTextAtSize(dateText, 10);
+    
+    page.drawText(cleanText(dateText), {
+      x: MARGIN + CONTENT_WIDTH - dateWidth - TASK_PADDING,
+      y: currentY,
+      size: 10,
+      font: helveticaOblique,
+      color: textColor,
+    });
+  }
+
+  // Photos - Code amélioré pour gestion multiple
+  if (hasPhotos) {
+    currentY -= 20; // Un peu plus d'espace entre le texte et les photos
+    
+    for (let row = 0; row < rows; row++) {
+      let photoX = MARGIN + TASK_PADDING;
+      
+      for (let col = 0; col < photosPerRow; col++) {
+        const photoIndex = row * photosPerRow + col;
         
-        // Description de la tâche
-        page.drawText(cleanText(task.description), {
-          x: MARGIN + TASK_PADDING,
-          y: currentY,
-          size: 12,
-          font: helveticaBold,
-          color: textColor,
-        });
-  
-        currentY -= 18;
-  
-        // Localisation et métier
-        const locationText = `${task.room || 'Non spécifié'}${tradeText}`;
-        page.drawText(cleanText(locationText), {
-          x: MARGIN + TASK_PADDING,
-          y: currentY,
-          size: 10,
-          font: helvetica,
-          color: textColor,
-        });
-  
-        // Date alignée à droite
-        if (task.completedAt) {
-          const completeddate = new Date(task.completedAt).toLocaleDateString('fr-FR', {
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric'
-          });
-          const dateText = `Réalisé le ${completeddate}`;
-          const dateWidth = helveticaOblique.widthOfTextAtSize(dateText, 10);
-          
-          page.drawText(cleanText(dateText), {
-            x: MARGIN + CONTENT_WIDTH - dateWidth - TASK_PADDING,
-            y: currentY,
-            size: 10,
-            font: helveticaOblique,
-            color: textColor,
-          });
-        }
-  
-        // Photos
-        if (hasPhotos) {
-          currentY -= 15;
-          let photoX = MARGIN + TASK_PADDING;
-  
-          for (let i = 0; i < Math.min(2, task.photos.length); i++) {
-            try {
-              const photo = task.photos[i];
-              const response = await fetch(photo.url);
-              const imageData = await response.arrayBuffer();
-              const image = await pdfDoc.embedJpg(imageData);
-  
-              const imgDims = image.scale(1);
-              const scaleFactor = Math.min(
-                (PHOTO_WIDTH - 20) / imgDims.width,
-                (PHOTO_HEIGHT - 10) / imgDims.height
-              );
-  
-              const scaledWidth = imgDims.width * scaleFactor;
-              const scaledHeight = imgDims.height * scaleFactor;
-  
-              const xOffset = (PHOTO_WIDTH - scaledWidth) / 2;
-              const yOffset = (PHOTO_HEIGHT - scaledHeight) / 2;
-  
-              page.drawImage(image, {
-                x: photoX + xOffset,
-                y: currentY - PHOTO_HEIGHT + yOffset,
-                width: scaledWidth,
-                height: scaledHeight,
-              });
-  
-              photoX += PHOTO_WIDTH + 20;
-            } catch (error) {
-              console.warn('Erreur lors du traitement de l\'image:', error);
-            }
+        if (photoIndex < task.photos.length) {
+          try {
+            const photo = task.photos[photoIndex];
+            const response = await fetch(photo.url);
+            const imageData = await response.arrayBuffer();
+            const image = await pdfDoc.embedJpg(imageData);
+            
+            const imgDims = image.scale(1);
+            const scaleFactor = Math.min(
+              (PHOTO_WIDTH - 20) / imgDims.width,
+              (PHOTO_HEIGHT - 10) / imgDims.height
+            );
+            
+            const scaledWidth = imgDims.width * scaleFactor;
+            const scaledHeight = imgDims.height * scaleFactor;
+            
+            const xOffset = (PHOTO_WIDTH - scaledWidth) / 2;
+            const yOffset = (PHOTO_HEIGHT - scaledHeight) / 2;
+            
+            page.drawImage(image, {
+              x: photoX + xOffset,
+              y: currentY - scaledHeight + yOffset,
+              width: scaledWidth,
+              height: scaledHeight,
+            });
+          } catch (error) {
+            console.warn('Erreur lors du traitement de l\'image:', error);
           }
         }
-  
-        return startY - taskHeight - 10;
-      };
+        
+        photoX += PHOTO_WIDTH + 20;
+      }
+      
+      // Passer à la ligne suivante de photos
+      currentY -= PHOTO_HEIGHT + 15;
+    }
+  }
+
+  return startY - taskHeight - 10;
+};
   
       // Dessiner les tâches
       for (const task of site.tasks) {
