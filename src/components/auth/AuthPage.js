@@ -16,26 +16,14 @@ const AuthPage = () => {
     setError(null);
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
       if (error) throw error;
 
-      // Vérifier le rôle de l'utilisateur
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', data.user.id)
-        .single();
-
-      // Vérifier si l'utilisateur a un rôle admin
-      if (profile?.role === 'admin') {
-        localStorage.setItem('userRole', 'admin');
-      } else {
-        localStorage.setItem('userRole', 'worker');
-      }
-
+      // Le rôle est récupéré depuis la table `profiles` côté AdminDashboard,
+      // pas besoin de le dupliquer en localStorage (manipulable côté client).
       navigate('/');
     } catch (error) {
       setError(error.message);
