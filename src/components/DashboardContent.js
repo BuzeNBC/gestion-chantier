@@ -13,8 +13,7 @@ const DashboardContent = () => {
     const loadData = async () => {
       try {
         setIsLoading(true);
-        console.log('Starting data load...');
-        
+
         // Charger les sites avec les informations des workers
         const { data: sitesData, error: sitesError } = await supabase
           .from('sites')
@@ -31,8 +30,6 @@ const DashboardContent = () => {
           throw sitesError;
         }
   
-        console.log('Sites loaded:', sitesData);
-  
         // Charger les trades
         const { data: tradesData, error: tradesError } = await supabase
           .from('trades')
@@ -42,8 +39,6 @@ const DashboardContent = () => {
           console.error('Trades error:', tradesError);
           throw tradesError;
         }
-  
-        console.log('Trades loaded:', tradesData);
   
         setSites(sitesData || []);
         setTrades(tradesData || []);

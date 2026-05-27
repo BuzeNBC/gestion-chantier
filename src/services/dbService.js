@@ -24,8 +24,6 @@ export class DBService {
   // Méthode pour stocker des données
   static async store(storeName, data) {
     try {
-      console.log('Tentative de stockage dans:', storeName);
-      
       // Supprimer les propriétés de relation qui ne font pas partie du schéma
       const cleanData = { ...data };
       if (storeName === 'sites') {
@@ -88,7 +86,6 @@ export class DBService {
         throw error;
       }
 
-      console.log(`Données récupérées avec succès de ${storeName}:`, data);
       return data || [];
     } catch (error) {
       console.error(`Erreur lors de la récupération des données de ${storeName}:`, error);
@@ -113,7 +110,6 @@ export class DBService {
         throw error;
       }
 
-      console.log(`Document supprimé avec succès de ${storeName}/${id}`);
     } catch (error) {
       console.error(`Erreur lors de la suppression de ${storeName}/${id}:`, error);
       throw error;

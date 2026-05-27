@@ -31,18 +31,11 @@ function LoginModal({ onClose }) {
 
       if (error) throw error;
 
-      // Ajout de logs pour debug
-      console.log("User data:", data.user);
-
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('role')
         .eq('id', data.user.id)
         .single();
-
-      // Ajout de logs pour debug
-      console.log("Profile data:", profile);
-      console.log("Profile error:", profileError);
 
       if (profileError) {
         setError(`Erreur profil: ${profileError.message}`);
