@@ -1,5 +1,5 @@
 import React, { useState, useEffect, memo } from 'react';
-import { Plus, Edit, Trash, Search, X, Upload } from 'lucide-react';
+import { Plus, Edit, Trash, Search, Upload } from 'lucide-react';
 import { DBService, STORES, generateUUID } from '../services/dbService';
 import { Modal } from './Modal';
 import TaskImporter from './TaskImporter';

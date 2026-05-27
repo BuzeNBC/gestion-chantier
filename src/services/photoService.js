@@ -60,7 +60,7 @@ export const PhotoService = {
       const fileName = `${siteId}/${taskId}/${Date.now()}.jpg`;
       const cacheKey = `photo_${fileName}`;
 
-      const { data, error } = await supabase.storage
+      const { error } = await supabase.storage
         .from('photos')
         .upload(`public/photos/${fileName}`, fileToUpload, {
           cacheControl: '3600',

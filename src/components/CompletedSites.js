@@ -1,8 +1,8 @@
 // components/CompletedSites.js
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabase';
-import { LineChart, BarChart, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Bar } from 'recharts';
-import { Download, Loader2, FileText } from 'lucide-react';
+import { BarChart, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Bar } from 'recharts';
+import { Loader2, FileText } from 'lucide-react';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 
 const CompletedSites = () => {
@@ -13,8 +13,6 @@ const CompletedSites = () => {
     totalTasks: 0,
   });
   const [pdfGenerating, setPdfGenerating] = useState(false);
-  const [pdfUrl, setPdfUrl] = useState(null);
-  const [pdfBlob, setPdfBlob] = useState(null);
 
   useEffect(() => {
     const fetchCompletedSites = async () => {
@@ -153,8 +151,7 @@ const CompletedSites = () => {
       yPosition -= 40;
 
       const totalTasks = site.tasks?.length || 0;
-      const completedTasks = site.tasks?.filter(task => task.completed)?.length || 0;
-      
+
       page.drawText(sanitizeText("Resume du chantier"), {
         x: MARGIN,
         y: yPosition,
@@ -292,15 +289,13 @@ const CompletedSites = () => {
       const blob = new Blob([pdfBytes], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
 
-      setPdfUrl(url);
-      setPdfBlob(blob);
-      
       const link = document.createElement('a');
       link.href = url;
       link.download = `rapport-${sanitizeText(site.name).toLowerCase().replace(/\s+/g, '-')}.pdf`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      URL.revokeObjectURL(url);
 
     } catch (error) {
       console.error('Erreur lors de la génération du PDF:', error);

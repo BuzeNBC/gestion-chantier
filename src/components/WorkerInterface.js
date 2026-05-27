@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Camera, Download, Eye, XCircle, FileText, Mail, CheckCircle, ChevronRight, ArrowLeft } from 'lucide-react';
+import { Download, XCircle, FileText, Mail, ChevronRight, ArrowLeft } from 'lucide-react';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-import { DBService, compressImage, STORES } from '../services/dbService';
 import { Modal } from './Modal';
 import { supabase } from '../services/supabase';
 import EmailPDFManager from './EmailPDFManager';
@@ -10,29 +9,17 @@ import PhotoUploadButton from './PhotoUploadButton';
 
 function WorkerInterface({ isAdminInWorkerMode = false }) {
   const [sites, setSites] = useState([]);
-  const [trades, setTrades] = useState([]);
+  // TODO: `trades` n'est jamais chargé depuis Supabase — `trades.find(...)` retourne
+  // toujours undefined. À corriger : ajouter un useEffect qui charge la table `trades`.
+  const [trades] = useState([]);
   const [selectedSite, setSelectedSite] = useState(null);
   const [modalState, setModalState] = useState({ type: null, data: null });
-  const [photo, setPhoto] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [pdfGenerating, setPdfGenerating] = useState(false);
   const [pdfUrl, setPdfUrl] = useState(null);
   const [pdfBlob, setPdfBlob] = useState(null);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   const { user } = useAuth();
-
-   // Function to detect iOS
-   const isIOS = () => {
-    return [
-      'iPad Simulator',
-      'iPhone Simulator',
-      'iPod Simulator',
-      'iPad',
-      'iPhone',
-      'iPod'
-    ].includes(navigator.platform)
-    || (navigator.userAgent.includes("Mac") && "ontouchend" in document);
-  };
 
   const isMobileDevice = () => {
     const userAgent = navigator.userAgent.toLowerCase();
@@ -44,25 +31,10 @@ function WorkerInterface({ isAdminInWorkerMode = false }) {
     return isMobile || isStandalone || isInWebAppiOS || isInWebAppChrome;
   };
 
-// Au début du composant, ajoutez un state pour le rôle
-const [isAdmin, setIsAdmin] = useState(false);
-
-// Modifiez le useEffect comme suit
-// Dans WorkerInterface.js, modifiez le useEffect pour le chargement des données :
-
-// Dans le useEffect de WorkerInterface.js
 useEffect(() => {
   const loadData = async () => {
     try {
       setIsLoading(true);
-      
-      // Récupérer l'utilisateur actuel et son profil
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      const { data: userProfile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', currentUser.id)
-        .single();
 
       // Charger tous les sites NON TERMINÉS
       const { data: sitesData, error: sitesError } = await supabase
@@ -94,17 +66,6 @@ useEffect(() => {
     loadData();
   }
 }, [user, isAdminInWorkerMode]);
-
-// Fonction pour vérifier si l'utilisateur peut supprimer une photo
-const canDeletePhoto = (task) => {
-  // L'admin peut toujours supprimer
-  if (isAdminInWorkerMode) {
-    return true;
-  }
-  
-  // L'ouvrier peut supprimer uniquement s'il est celui qui a complété la tâche
-  return task.completedBy === user.id;
-};
 
 // Fonction modifiée pour la suppression des photos
 // Modifiez la fonction handlePhotoDelete
@@ -232,41 +193,6 @@ const handleFirstPhotoAndComplete = async (siteId, taskId, photoUrl, photoId) =>
     setIsLoading(false);
   }
 };
-
-  const previewPhoto = async (file) => {
-    if (!file || !(file instanceof Blob)) {
-      throw new Error('Fichier photo invalide');
-    }
-    
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target.result);
-      reader.onerror = () => reject(new Error('Erreur lors de la lecture du fichier'));
-      reader.readAsDataURL(file);
-    });
-  };
-
-  const handleTaskCompletion = async (siteId, taskId, photoFile) => {
-    try {
-      if (!photoFile || !(photoFile instanceof Blob)) {
-        throw new Error('Une photo valide est requise');
-      }
-
-      const previewUrl = await previewPhoto(photoFile);
-      setModalState({ 
-        type: 'confirm-completion', 
-        data: { 
-          siteId, 
-          taskId, 
-          photoFile,
-          previewUrl 
-        } 
-      });
-    } catch (error) {
-      console.error('Erreur:', error);
-      alert(error.message);
-    }
-  };
 
   // Nettoyer l'URL du PDF quand le composant est démonté
   useEffect(() => {
@@ -553,7 +479,7 @@ const drawTask = async (task, startY) => {
     } finally {
       setPdfGenerating(false);
     }
-  }, [pdfUrl, pdfGenerating, trades]);
+  }, [pdfGenerating, trades]);
 
 // Fonction améliorée pour gérer le téléchargement
 const handlePDFDownload = () => {
@@ -721,6 +647,9 @@ const sendReportByEmail = async (site, email) => {
               case 'fixed_price':
                 measureText = 'Forfait';
                 break;
+              default:
+                measureText = `${task.quantity || 0} ${task.measureType}`;
+                break;
             }
           }
 
@@ -879,43 +808,6 @@ const sendReportByEmail = async (site, email) => {
             alt="Preuve de réalisation"
             className="w-full rounded-lg"
           />
-        </Modal>
-      )}
-
-      {modalState.type === 'confirm-completion' && (
-        <Modal
-          title="Confirmer la réalisation"
-          onClose={() => setModalState({ type: null })}
-        >
-          <div className="space-y-4">
-            <div className="aspect-w-16 aspect-h-9 rounded-lg overflow-hidden">
-              <img
-                src={modalState.data.previewUrl}
-                alt="Aperçu"
-                className="w-full h-full object-cover"
-              />
-            </div>
-            <div className="flex justify-between items-center">
-            <button
-                onClick={() => setModalState({ type: null })}
-                className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
-              >
-                <XCircle className="h-5 w-5" />
-                Annuler
-              </button>
-              <button
-                onClick={() => handleFirstPhotoAndComplete(
-                  modalState.data.siteId,
-                  modalState.data.taskId,
-                  modalState.data.photoFile
-                )}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-              >
-                <CheckCircle className="h-5 w-5" />
-                Confirmer
-              </button>
-            </div>
-          </div>
         </Modal>
       )}
 

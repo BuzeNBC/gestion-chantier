@@ -11,8 +11,7 @@ import {
   Filter,    // Ajouté
   ChevronDown // Ajouté
 } from 'lucide-react';
-import { DBService, compressImage, STORES } from '../services/dbService';
-import { useAuth } from '../contexts/AuthContext';
+import { DBService, STORES } from '../services/dbService';
 import { supabase } from '../services/supabase';
 
 // Composants réutilisables
@@ -335,26 +334,6 @@ const SiteForm = memo(({ site, onSubmit, onCancel }) => {
     tasks: []
   });
 
-  const [workers, setWorkers] = useState([]);
-
-  useEffect(() => {
-    const fetchWorkers = async () => {
-      try {
-        const { data: workersData, error } = await supabase
-          .from('profiles')
-          .select('id, Name, role')
-          .eq('role', 'worker');
-
-        if (error) throw error;
-        setWorkers(workersData || []);
-      } catch (error) {
-        console.error('Erreur lors du chargement des ouvriers:', error);
-      }
-    };
-
-    fetchWorkers();
-  }, []);
-
   const handleSubmit = () => {
     if (!formData.name || !formData.address) {
       alert('Veuillez remplir tous les champs obligatoires');
@@ -596,15 +575,14 @@ const SiteManagement = () => {
       const updatedTasks = [...site.tasks, newTask];
   
       // Mettre à jour directement via Supabase
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('sites')
-        .update({ 
+        .update({
           tasks: updatedTasks,
           updated_at: new Date().toISOString()
         })
-        .eq('id', siteId)
-        .select();
-  
+        .eq('id', siteId);
+
       if (error) throw error;
   
       // Mettre à jour l'état local
