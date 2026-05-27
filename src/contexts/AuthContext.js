@@ -40,17 +40,10 @@ export const AuthProvider = ({ children }) => {
     return await supabase.auth.signOut();
   };
 
-  const value = {
-    user,
-    loading,
-    signIn,
-    signUp,
-    signOut
-  };
+  const value = { user, loading, signIn, signUp, signOut };
 
-  console.log("AuthProvider rendering:", { user, loading });
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

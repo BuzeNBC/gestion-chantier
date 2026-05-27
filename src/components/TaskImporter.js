@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, AlertCircle } from 'lucide-react';
+import { Upload } from 'lucide-react';
 import { DBService, STORES } from '../services/dbService';
 
 const TaskImporter = ({ onClose }) => {
-  const [file, setFile] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [trades, setTrades] = useState([]);
   const [selectedTrade, setSelectedTrade] = useState('');
@@ -29,7 +28,6 @@ const TaskImporter = ({ onClose }) => {
   const handleFileUpload = (event) => {
     const file = event.target.files[0];
     if (file && file.type === 'text/csv') {
-      setFile(file);
       parseCSV(file);
     } else {
       alert('Veuillez sélectionner un fichier CSV');
