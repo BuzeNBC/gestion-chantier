@@ -16,8 +16,9 @@ export const generateUUID = () => {
 // Définition des stores disponibles dans l'application
 export const STORES = {
   PHOTOS: "photos",
-  SITES: "sites", 
-  TRADES: "trades"
+  SITES: "sites",
+  TRADES: "trades",
+  MENUISERIE: "menuiserie_orders"
 };
 
 export class DBService {
@@ -30,6 +31,9 @@ export class DBService {
       const cleanData = { ...data };
       if (storeName === 'sites') {
         delete cleanData.profiles;
+      }
+      if (storeName === 'menuiserie_orders') {
+        delete cleanData.assigned_profile;
       }
   
       const { data: result, error } = await supabase
