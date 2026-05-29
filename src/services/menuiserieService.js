@@ -40,8 +40,19 @@ export const MENUISERIE_PHOTO_CATEGORIES = {
   autre: 'Autre',
 };
 
-// Libellé lisible d'un type d'intervention (avec repli)
-export const typeLabel = (type) => MENUISERIE_TYPES[type] || MENUISERIE_TYPES.autre;
+// Libellé lisible d'un type d'intervention.
+// Le type d'un bon provient des tâches du corps d'état « Menuiserie » : c'est
+// donc déjà un libellé lisible, qu'on affiche tel quel. On garde la table
+// MENUISERIE_TYPES en repli pour d'éventuelles anciennes valeurs (clés).
+export const typeLabel = (type) => {
+  if (!type) return MENUISERIE_TYPES.autre;
+  return MENUISERIE_TYPES[type] || type;
+};
+
+// Détecte le corps d'état « Menuiserie » parmi une liste de corps d'état.
+// L'app n'en a qu'un seul ; on le repère par son nom (insensible à la casse).
+export const findMenuiserieTrade = (trades = []) =>
+  trades.find((t) => (t.name || '').toLowerCase().includes('menuis')) || null;
 
 // Libellé lisible d'un statut (avec repli)
 export const statusLabel = (status) => MENUISERIE_STATUS[status] || MENUISERIE_STATUS.todo;

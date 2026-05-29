@@ -5,8 +5,8 @@ import {
 import { supabase } from '../../services/supabase';
 import { DBService, STORES, generateUUID } from '../../services/dbService';
 import {
-  MENUISERIE_TYPES, MENUISERIE_STATUS, MENUISERIE_STATUS_STYLES,
-  MENUISERIE_PHOTO_CATEGORIES, typeLabel, statusLabel,
+  MENUISERIE_STATUS, MENUISERIE_STATUS_STYLES,
+  MENUISERIE_PHOTO_CATEGORIES, typeLabel, statusLabel, findMenuiserieTrade,
 } from '../../services/menuiserieService';
 import MeasurementsEditor from './MeasurementsEditor';
 
@@ -25,7 +25,7 @@ const Modal = memo(({ title, onClose, children, wide = false }) => (
 ));
 
 const emptyForm = {
-  type: 'reparation_vr',
+  type: '',
   client_name: '',
   client_phone: '',
   address: '',
@@ -35,9 +35,10 @@ const emptyForm = {
   reference: '',
 };
 
-const OrderForm = ({ order, menuisiers, onSubmit, onCancel }) => {
+// `interventionOptions` = les tâches du corps d'état « Menuiserie ».
+const OrderForm = ({ order, menuisiers, interventionOptions, onSubmit, onCancel }) => {
   const [form, setForm] = useState(order ? {
-    type: order.type || 'reparation_vr',
+    type: order.type || '',
     client_name: order.client_name || '',
     client_phone: order.client_phone || '',
     address: order.address || '',
@@ -49,9 +50,19 @@ const OrderForm = ({ order, menuisiers, onSubmit, onCancel }) => {
 
   const set = (field, value) => setForm((f) => ({ ...f, [field]: value }));
 
+  // Si le type enregistré n'est plus dans la liste des tâches (tâche renommée
+  // ou supprimée), on l'ajoute en option pour ne pas le perdre à l'édition.
+  const typeChoices = form.type && !interventionOptions.includes(form.type)
+    ? [form.type, ...interventionOptions]
+    : interventionOptions;
+
   const submit = () => {
     if (!form.client_name.trim()) {
       alert('Le nom du client est obligatoire.');
+      return;
+    }
+    if (!form.type.trim()) {
+      alert("Le type d'intervention est obligatoire.");
       return;
     }
     onSubmit({ ...form, assigned_to: form.assigned_to || null });
@@ -60,16 +71,33 @@ const OrderForm = ({ order, menuisiers, onSubmit, onCancel }) => {
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-sm font-medium mb-1">Type d'intervention</label>
-        <select
-          value={form.type}
-          onChange={(e) => set('type', e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-        >
-          {Object.entries(MENUISERIE_TYPES).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </select>
+        <label className="block text-sm font-medium mb-1">Type d'intervention *</label>
+        {typeChoices.length > 0 ? (
+          <select
+            value={form.type}
+            onChange={(e) => set('type', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          >
+            <option value="">— Choisir une intervention —</option>
+            {typeChoices.map((task) => (
+              <option key={task} value={task}>{task}</option>
+            ))}
+          </select>
+        ) : (
+          <>
+            <input
+              type="text"
+              value={form.type}
+              onChange={(e) => set('type', e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              placeholder="Ex: Réparation volet roulant"
+            />
+            <p className="text-xs text-amber-600 mt-1">
+              Aucune tâche trouvée dans le corps d'état « Menuiserie ». Ajoute des
+              tâches à ce corps d'état (onglet « Corps d'état ») pour les retrouver ici.
+            </p>
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -227,6 +255,7 @@ const OrderDetail = ({ order }) => (
 function MenuiserieManagement() {
   const [orders, setOrders] = useState([]);
   const [menuisiers, setMenuisiers] = useState([]);
+  const [interventionOptions, setInterventionOptions] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [modal, setModal] = useState({ type: null, data: null });
   const [search, setSearch] = useState('');
@@ -236,19 +265,25 @@ function MenuiserieManagement() {
   const loadData = useCallback(async () => {
     try {
       setIsLoading(true);
-      const [ordersRes, menuisiersRes] = await Promise.all([
+      const [ordersRes, menuisiersRes, tradesRes] = await Promise.all([
         supabase
           .from('menuiserie_orders')
           .select('*, assigned_profile:assigned_to(id, Name)')
           .order('created_at', { ascending: false }),
         supabase.from('profiles').select('id, Name, role').eq('role', 'menuisier'),
+        supabase.from('trades').select('id, name, tasks'),
       ]);
 
       if (ordersRes.error) throw ordersRes.error;
       if (menuisiersRes.error) throw menuisiersRes.error;
+      if (tradesRes.error) throw tradesRes.error;
 
       setOrders(ordersRes.data || []);
       setMenuisiers(menuisiersRes.data || []);
+
+      // Les types d'intervention proviennent des tâches du corps d'état « Menuiserie »
+      const menuiserieTrade = findMenuiserieTrade(tradesRes.data || []);
+      setInterventionOptions(menuiserieTrade?.tasks || []);
     } catch (error) {
       console.error('Erreur chargement menuiserie:', error);
     } finally {
@@ -327,6 +362,12 @@ function MenuiserieManagement() {
     completed: orders.filter((o) => o.status === 'completed').length,
   };
 
+  // Options du filtre « type » : tâches du corps d'état + types déjà présents
+  // sur des bons (au cas où une tâche aurait été renommée/supprimée).
+  const typeFilterOptions = Array.from(
+    new Set([...interventionOptions, ...orders.map((o) => o.type).filter(Boolean)])
+  );
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -373,7 +414,7 @@ function MenuiserieManagement() {
         </select>
         <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg">
           <option value="all">Tous les types</option>
-          {Object.entries(MENUISERIE_TYPES).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          {typeFilterOptions.map((t) => <option key={t} value={t}>{typeLabel(t)}</option>)}
         </select>
       </div>
 
@@ -424,12 +465,23 @@ function MenuiserieManagement() {
 
       {modal.type === 'create' && (
         <Modal title="Nouveau bon de menuiserie" onClose={() => setModal({ type: null })}>
-          <OrderForm menuisiers={menuisiers} onSubmit={handleCreate} onCancel={() => setModal({ type: null })} />
+          <OrderForm
+            menuisiers={menuisiers}
+            interventionOptions={interventionOptions}
+            onSubmit={handleCreate}
+            onCancel={() => setModal({ type: null })}
+          />
         </Modal>
       )}
       {modal.type === 'edit' && (
         <Modal title="Modifier le bon" onClose={() => setModal({ type: null })}>
-          <OrderForm order={modal.data} menuisiers={menuisiers} onSubmit={handleEdit} onCancel={() => setModal({ type: null })} />
+          <OrderForm
+            order={modal.data}
+            menuisiers={menuisiers}
+            interventionOptions={interventionOptions}
+            onSubmit={handleEdit}
+            onCancel={() => setModal({ type: null })}
+          />
         </Modal>
       )}
       {modal.type === 'detail' && (
