@@ -65,7 +65,14 @@ const OrderForm = ({ order, menuisiers, interventionOptions, onSubmit, onCancel 
       alert("Le type d'intervention est obligatoire.");
       return;
     }
-    onSubmit({ ...form, assigned_to: form.assigned_to || null });
+    // Normalise les chaînes vides en null pour les colonnes nullable
+    // (sinon Postgres rejette `""` sur `date`, et la FK profile préfère `null`).
+    onSubmit({
+      ...form,
+      assigned_to: form.assigned_to || null,
+      scheduled_date: form.scheduled_date || null,
+      reference: form.reference || null,
+    });
   };
 
   return (
