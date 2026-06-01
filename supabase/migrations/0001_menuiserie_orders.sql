@@ -9,6 +9,22 @@
 --   'worker'    -> aucun accès à la menuiserie
 -- =============================================================================
 
+-- 0) Autoriser le rôle 'menuisier' sur profiles.role -------------------------
+-- La table profiles possède un CHECK constraint qui n'accepte historiquement
+-- que 'admin' et 'worker'. On l'élargit pour inclure 'menuisier'.
+do $$
+begin
+  if exists (
+    select 1 from pg_constraint where conname = 'profiles_role_check'
+  ) then
+    alter table public.profiles drop constraint profiles_role_check;
+  end if;
+end $$;
+
+alter table public.profiles
+  add constraint profiles_role_check
+  check (role in ('admin', 'worker', 'menuisier'));
+
 -- 1) Table -------------------------------------------------------------------
 create table if not exists public.menuiserie_orders (
   id            uuid primary key default gen_random_uuid(),
