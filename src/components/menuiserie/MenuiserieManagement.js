@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import {
-  Plus, Edit, Trash, X, Search, Eye, MapPin, User, Calendar,
+  Plus, Edit, Trash, X, Search, Eye, MapPin, User, Calendar, FileText,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { DBService, STORES, generateUUID } from '../../services/dbService';
@@ -8,6 +8,7 @@ import {
   MENUISERIE_STATUS, MENUISERIE_STATUS_STYLES,
   MENUISERIE_PHOTO_CATEGORIES, typeLabel, statusLabel, findMenuiserieTrade,
 } from '../../services/menuiserieService';
+import { generateMenuiseriePdf, openOrDownloadPdf } from '../../services/menuiseriePdf';
 import MeasurementsEditor from './MeasurementsEditor';
 
 const Modal = memo(({ title, onClose, children, wide = false }) => (
@@ -47,6 +48,10 @@ const OrderForm = ({ order, menuisiers, interventionOptions, onSubmit, onCancel 
     scheduled_date: order.scheduled_date || '',
     reference: order.reference || '',
   } : emptyForm);
+  // Mode "intervention personnalisée" : l'admin tape une nouvelle intervention
+  // qui sera ajoutée au corps d'état Menuiserie (via onSubmit) en plus du bon.
+  const [customMode, setCustomMode] = useState(false);
+  const [customType, setCustomType] = useState('');
 
   const set = (field, value) => setForm((f) => ({ ...f, [field]: value }));
 
@@ -61,7 +66,8 @@ const OrderForm = ({ order, menuisiers, interventionOptions, onSubmit, onCancel 
       alert('Le nom du client est obligatoire.');
       return;
     }
-    if (!form.type.trim()) {
+    const effectiveType = customMode ? customType.trim() : form.type.trim();
+    if (!effectiveType) {
       alert("Le type d'intervention est obligatoire.");
       return;
     }
@@ -69,17 +75,51 @@ const OrderForm = ({ order, menuisiers, interventionOptions, onSubmit, onCancel 
     // (sinon Postgres rejette `""` sur `date`, et la FK profile préfère `null`).
     onSubmit({
       ...form,
+      type: effectiveType,
       assigned_to: form.assigned_to || null,
       scheduled_date: form.scheduled_date || null,
       reference: form.reference || null,
+      // Le parent persistera cette tâche dans le corps d'état Menuiserie.
+      _customTypeToPersist: customMode && !interventionOptions.includes(effectiveType) ? effectiveType : null,
     });
   };
 
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-sm font-medium mb-1">Type d'intervention *</label>
-        {typeChoices.length > 0 ? (
+        <div className="flex items-center justify-between mb-1">
+          <label className="block text-sm font-medium">Type d'intervention *</label>
+          {typeChoices.length > 0 && (
+            <label className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={customMode}
+                onChange={(e) => {
+                  setCustomMode(e.target.checked);
+                  if (!e.target.checked) setCustomType('');
+                }}
+                className="h-3.5 w-3.5"
+              />
+              Nouvelle intervention
+            </label>
+          )}
+        </div>
+        {customMode || typeChoices.length === 0 ? (
+          <>
+            <input
+              type="text"
+              value={customMode ? customType : form.type}
+              onChange={(e) => (customMode ? setCustomType(e.target.value) : set('type', e.target.value))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              placeholder="Ex: Réparation volet roulant"
+            />
+            <p className="text-xs text-blue-600 mt-1">
+              {typeChoices.length === 0
+                ? "Aucune tâche trouvée dans le corps d'état « Menuiserie »."
+                : "Cette nouvelle intervention sera ajoutée à ton corps d'état Menuiserie."}
+            </p>
+          </>
+        ) : (
           <select
             value={form.type}
             onChange={(e) => set('type', e.target.value)}
@@ -90,20 +130,6 @@ const OrderForm = ({ order, menuisiers, interventionOptions, onSubmit, onCancel 
               <option key={task} value={task}>{task}</option>
             ))}
           </select>
-        ) : (
-          <>
-            <input
-              type="text"
-              value={form.type}
-              onChange={(e) => set('type', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              placeholder="Ex: Réparation volet roulant"
-            />
-            <p className="text-xs text-amber-600 mt-1">
-              Aucune tâche trouvée dans le corps d'état « Menuiserie ». Ajoute des
-              tâches à ce corps d'état (onglet « Corps d'état ») pour les retrouver ici.
-            </p>
-          </>
         )}
       </div>
 
@@ -200,8 +226,36 @@ const OrderForm = ({ order, menuisiers, interventionOptions, onSubmit, onCancel 
   );
 };
 
-const OrderDetail = ({ order }) => (
-  <div className="space-y-5">
+const OrderDetail = ({ order }) => {
+  const [pdfGenerating, setPdfGenerating] = useState(false);
+
+  const handleGeneratePdf = async () => {
+    if (pdfGenerating) return;
+    try {
+      setPdfGenerating(true);
+      const { url, blob } = await generateMenuiseriePdf(order);
+      const slug = (order.client_name || 'bon').toLowerCase().replace(/\s+/g, '-');
+      openOrDownloadPdf({ url, blob }, `bon-menuiserie-${slug}-${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (e) {
+      console.error('Erreur génération PDF menuiserie :', e);
+      alert('Erreur lors de la génération du PDF.');
+    } finally {
+      setPdfGenerating(false);
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex justify-end">
+        <button
+          onClick={handleGeneratePdf}
+          disabled={pdfGenerating}
+          className="flex items-center gap-2 px-3 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-900 text-sm disabled:opacity-50"
+        >
+          <FileText className="h-4 w-4" />
+          {pdfGenerating ? 'Génération…' : 'Rapport PDF'}
+        </button>
+      </div>
     <div className="grid grid-cols-2 gap-3 text-sm">
       <div><span className="text-gray-500">Type :</span> {typeLabel(order.type)}</div>
       <div>
@@ -256,13 +310,17 @@ const OrderDetail = ({ order }) => (
         <p className="text-sm text-gray-600 whitespace-pre-wrap">{order.notes}</p>
       </div>
     )}
-  </div>
-);
+    </div>
+  );
+};
 
 function MenuiserieManagement() {
   const [orders, setOrders] = useState([]);
   const [menuisiers, setMenuisiers] = useState([]);
   const [interventionOptions, setInterventionOptions] = useState([]);
+  // On garde la référence au corps d'état Menuiserie pour pouvoir y persister
+  // une nouvelle tâche créée à la volée depuis le formulaire de bon.
+  const [menuiserieTrade, setMenuiserieTrade] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [modal, setModal] = useState({ type: null, data: null });
   const [search, setSearch] = useState('');
@@ -278,7 +336,7 @@ function MenuiserieManagement() {
           .select('*, assigned_profile:assigned_to(id, Name)')
           .order('created_at', { ascending: false }),
         supabase.from('profiles').select('id, Name, role').eq('role', 'menuisier'),
-        supabase.from('trades').select('id, name, tasks'),
+        supabase.from('trades').select('*'),
       ]);
 
       if (ordersRes.error) throw ordersRes.error;
@@ -289,8 +347,9 @@ function MenuiserieManagement() {
       setMenuisiers(menuisiersRes.data || []);
 
       // Les types d'intervention proviennent des tâches du corps d'état « Menuiserie »
-      const menuiserieTrade = findMenuiserieTrade(tradesRes.data || []);
-      setInterventionOptions(menuiserieTrade?.tasks || []);
+      const trade = findMenuiserieTrade(tradesRes.data || []);
+      setMenuiserieTrade(trade);
+      setInterventionOptions(trade?.tasks || []);
     } catch (error) {
       console.error('Erreur chargement menuiserie:', error);
     } finally {
@@ -302,10 +361,33 @@ function MenuiserieManagement() {
     loadData();
   }, [loadData]);
 
+  // Persiste une nouvelle tâche dans le corps d'état Menuiserie pour qu'elle
+  // soit disponible dans la liste déroulante des prochains bons.
+  const persistCustomTaskIfAny = async (customTask) => {
+    if (!customTask) return;
+    if (!menuiserieTrade) {
+      console.warn('Aucun corps d\'état Menuiserie trouvé — tâche custom non sauvée.');
+      return;
+    }
+    if ((menuiserieTrade.tasks || []).includes(customTask)) return;
+    try {
+      const updatedTrade = {
+        ...menuiserieTrade,
+        tasks: [...(menuiserieTrade.tasks || []), customTask],
+        updated_at: new Date().toISOString(),
+      };
+      await DBService.store(STORES.TRADES, updatedTrade);
+    } catch (e) {
+      console.error('Erreur ajout tâche au corps d\'état:', e);
+      // On ne bloque pas la création du bon pour autant.
+    }
+  };
+
   const handleCreate = async (formData) => {
     try {
+      const { _customTypeToPersist, ...orderFields } = formData;
       const newOrder = {
-        ...formData,
+        ...orderFields,
         id: generateUUID(),
         status: 'todo',
         measurements: [],
@@ -314,6 +396,7 @@ function MenuiserieManagement() {
         updated_at: new Date().toISOString(),
       };
       await DBService.store(STORES.MENUISERIE, newOrder);
+      await persistCustomTaskIfAny(_customTypeToPersist);
       setModal({ type: null });
       loadData();
     } catch (error) {
@@ -325,12 +408,14 @@ function MenuiserieManagement() {
   const handleEdit = async (formData) => {
     try {
       const { assigned_profile, ...rest } = modal.data; // eslint-disable-line no-unused-vars
+      const { _customTypeToPersist, ...orderFields } = formData;
       const updated = {
         ...rest,
-        ...formData,
+        ...orderFields,
         updated_at: new Date().toISOString(),
       };
       await DBService.store(STORES.MENUISERIE, updated);
+      await persistCustomTaskIfAny(_customTypeToPersist);
       setModal({ type: null });
       loadData();
     } catch (error) {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   ArrowLeft, MapPin, Phone, User, Ruler, Camera, CheckCircle,
-  Clock, Save, Trash2, ChevronRight, LogOut,
+  Clock, Save, Trash2, ChevronRight, LogOut, FileText, X,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -9,6 +9,7 @@ import {
   MENUISERIE_STATUS_STYLES, MENUISERIE_PHOTO_CATEGORIES,
   typeLabel, statusLabel,
 } from '../../services/menuiserieService';
+import { generateMenuiseriePdf, openOrDownloadPdf } from '../../services/menuiseriePdf';
 import PhotoUploadButton from '../PhotoUploadButton';
 import MeasurementsEditor from './MeasurementsEditor';
 
@@ -18,6 +19,8 @@ function MenuisierInterface() {
   const [selected, setSelected] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [previewPhotoUrl, setPreviewPhotoUrl] = useState(null);
 
   // Champs éditables du bon en cours
   const [measurements, setMeasurements] = useState([]);
@@ -102,6 +105,25 @@ function MenuisierInterface() {
       alert("Erreur lors de l'enregistrement. Réessayez.");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  // Génère le rapport PDF du bon (avec cotes, photos, notes) et l'ouvre.
+  // On enregistre d'abord les modifs non sauvées pour qu'elles soient incluses.
+  const handleGeneratePdf = async () => {
+    if (!selected || pdfGenerating) return;
+    try {
+      setPdfGenerating(true);
+      // Snapshot du bon avec les valeurs courantes du formulaire
+      const snapshot = { ...selected, measurements, photos, notes, status };
+      const { url, blob } = await generateMenuiseriePdf(snapshot);
+      const slug = (selected.client_name || 'bon').toLowerCase().replace(/\s+/g, '-');
+      openOrDownloadPdf({ url, blob }, `bon-menuiserie-${slug}-${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (error) {
+      console.error('Erreur génération PDF menuiserie :', error);
+      alert('Erreur lors de la génération du PDF.');
+    } finally {
+      setPdfGenerating(false);
     }
   };
 
@@ -254,16 +276,25 @@ function MenuisierInterface() {
           </div>
 
           {photos.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {photos.map((p) => (
-                <div key={p.id} className="relative group">
-                  <img src={p.url} alt={p.category} className="w-full h-28 object-cover rounded-lg" />
-                  <span className="absolute bottom-1 left-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded">
-                    {MENUISERIE_PHOTO_CATEGORIES[p.category] || p.category}
-                  </span>
+            // Comme dans le mode ouvrier : on n'affiche PAS les miniatures
+            // inline (économise la bande passante mobile et accélère le
+            // rendu de la page). L'utilisateur clique sur le lien pour
+            // visualiser la photo dans une modale.
+            <div className="flex flex-wrap gap-x-3 gap-y-2 pt-1">
+              {photos.map((p, idx) => (
+                <div key={p.id} className="flex items-center gap-1 group">
+                  <button
+                    onClick={() => setPreviewPhotoUrl(p.url)}
+                    className="text-sm text-blue-600 hover:text-blue-800"
+                  >
+                    Photo {idx + 1}
+                    <span className="ml-1 text-xs text-gray-400">
+                      ({MENUISERIE_PHOTO_CATEGORIES[p.category] || p.category})
+                    </span>
+                  </button>
                   <button
                     onClick={() => removePhoto(p.id)}
-                    className="absolute top-1 right-1 bg-white/90 text-red-600 rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="text-red-600 hover:text-red-800 opacity-0 group-hover:opacity-100 transition-opacity"
                     aria-label="Retirer la photo"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -312,8 +343,38 @@ function MenuisierInterface() {
             <Save className="h-4 w-4" />
             {isSaving ? 'Enregistrement…' : 'Enregistrer les modifications'}
           </button>
+          <button
+            onClick={handleGeneratePdf}
+            disabled={pdfGenerating}
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-900 disabled:opacity-50"
+          >
+            <FileText className="h-4 w-4" />
+            {pdfGenerating ? 'Génération en cours…' : 'Générer le rapport PDF'}
+          </button>
         </section>
       </main>
+
+      {/* Modale d'aperçu d'une photo (clic sur un lien "Photo N") */}
+      {previewPhotoUrl && (
+        <div
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
+          onClick={() => setPreviewPhotoUrl(null)}
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); setPreviewPhotoUrl(null); }}
+            className="absolute top-4 right-4 text-white hover:text-gray-200"
+            aria-label="Fermer"
+          >
+            <X className="h-7 w-7" />
+          </button>
+          <img
+            src={previewPhotoUrl}
+            alt="Aperçu"
+            className="max-w-full max-h-full object-contain rounded-lg"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 }
