@@ -7,9 +7,11 @@ import { DBService, STORES, generateUUID } from '../../services/dbService';
 import {
   MENUISERIE_STATUS, MENUISERIE_STATUS_STYLES,
   MENUISERIE_PHOTO_CATEGORIES, typeLabel, statusLabel, findMenuiserieTrade,
+  newIntervention, computeOrderStatus, orderInterventions,
 } from '../../services/menuiserieService';
 import { generateMenuiseriePdf, openOrDownloadPdf } from '../../services/menuiseriePdf';
 import MeasurementsEditor from './MeasurementsEditor';
+import InterventionLinesEditor from './InterventionLinesEditor';
 
 const Modal = memo(({ title, onClose, children, wide = false }) => (
   <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -26,7 +28,6 @@ const Modal = memo(({ title, onClose, children, wide = false }) => (
 ));
 
 const emptyForm = {
-  type: '',
   client_name: '',
   client_phone: '',
   address: '',
@@ -38,11 +39,28 @@ const emptyForm = {
   charge_affaire: '',
 };
 
+// Construit les `interventionLines` initiales du formulaire à partir d'un bon
+// existant (édition) ou retourne une ligne vide (création).
+const initialLinesFromOrder = (order) => {
+  const existing = orderInterventions(order);
+  if (existing.length === 0) {
+    return [{ lineId: 'l-init', type: '', customMode: false, customText: '' }];
+  }
+  return existing.map((iv) => ({
+    lineId: 'l-' + iv.id,
+    type: iv.type || '',
+    customMode: false,
+    customText: '',
+    // Garde la référence à l'intervention existante (avec ses cotes/photos/etc)
+    // pour la repasser intacte côté parent au submit.
+    existing: iv,
+  }));
+};
+
 // `interventionOptions` = les tâches du corps d'état « Menuiserie ».
 // `chargeAffaireOptions` = liste des chargé(e)s d'affaire (table charge_affaires).
 const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOptions, onSubmit, onCancel }) => {
   const [form, setForm] = useState(order ? {
-    type: order.type || '',
     client_name: order.client_name || '',
     client_phone: order.client_phone || '',
     address: order.address || '',
@@ -53,21 +71,13 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
     bt_number: order.bt_number || '',
     charge_affaire: order.charge_affaire || '',
   } : emptyForm);
-  // Mode "intervention personnalisée" : l'admin tape une nouvelle intervention
-  // qui sera ajoutée au corps d'état Menuiserie (via onSubmit) en plus du bon.
-  const [customMode, setCustomMode] = useState(false);
-  const [customType, setCustomType] = useState('');
-  // Idem pour le chargé d'affaire : possibilité d'en ajouter un nouveau.
+  // Liste éditable d'interventions (cf. InterventionLinesEditor).
+  const [interventionLines, setInterventionLines] = useState(() => initialLinesFromOrder(order));
+  // Chargé d'affaire : possibilité d'en ajouter un nouveau.
   const [customCAMode, setCustomCAMode] = useState(false);
   const [customCA, setCustomCA] = useState('');
 
   const set = (field, value) => setForm((f) => ({ ...f, [field]: value }));
-
-  // Si le type enregistré n'est plus dans la liste des tâches (tâche renommée
-  // ou supprimée), on l'ajoute en option pour ne pas le perdre à l'édition.
-  const typeChoices = form.type && !interventionOptions.includes(form.type)
-    ? [form.type, ...interventionOptions]
-    : interventionOptions;
 
   // Même logique pour le chargé d'affaire (préservation à l'édition).
   const caChoices = form.charge_affaire && !chargeAffaireOptions.includes(form.charge_affaire)
@@ -79,77 +89,43 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
       alert('Le nom du client est obligatoire.');
       return;
     }
-    const effectiveType = customMode ? customType.trim() : form.type.trim();
-    if (!effectiveType) {
-      alert("Le type d'intervention est obligatoire.");
+    // Construire les interventions à partir des lignes
+    const interventions = [];
+    const newTaskTypes = [];
+    for (const line of interventionLines) {
+      const t = (line.customMode ? line.customText : line.type).trim();
+      if (!t) continue;
+      if (line.existing) {
+        // Édition d'une intervention déjà existante : on garde tout, on met juste à jour le type
+        interventions.push({ ...line.existing, type: t });
+      } else {
+        interventions.push(newIntervention(t));
+      }
+      if (line.customMode && !interventionOptions.includes(t) && !newTaskTypes.includes(t)) {
+        newTaskTypes.push(t);
+      }
+    }
+    if (interventions.length === 0) {
+      alert("Ajoute au moins une intervention.");
       return;
     }
     const effectiveCA = customCAMode ? customCA.trim() : form.charge_affaire.trim();
-    // Normalise les chaînes vides en null pour les colonnes nullable
-    // (sinon Postgres rejette `""` sur `date`, et la FK profile préfère `null`).
     onSubmit({
       ...form,
-      type: effectiveType,
+      interventions,
       charge_affaire: effectiveCA || null,
       assigned_to: form.assigned_to || null,
       scheduled_date: form.scheduled_date || null,
       reference: form.reference || null,
       bt_number: form.bt_number || null,
-      // Le parent persistera ces nouvelles entrées (corps d'état + table charge_affaires).
-      _customTypeToPersist: customMode && !interventionOptions.includes(effectiveType) ? effectiveType : null,
+      // Tâches à ajouter au corps d'état Menuiserie
+      _customTypesToPersist: newTaskTypes,
       _customCAToPersist: customCAMode && effectiveCA && !chargeAffaireOptions.includes(effectiveCA) ? effectiveCA : null,
     });
   };
 
   return (
     <div className="space-y-4">
-      <div>
-        <div className="flex items-center justify-between mb-1">
-          <label className="block text-sm font-medium">Type d'intervention *</label>
-          {typeChoices.length > 0 && (
-            <label className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={customMode}
-                onChange={(e) => {
-                  setCustomMode(e.target.checked);
-                  if (!e.target.checked) setCustomType('');
-                }}
-                className="h-3.5 w-3.5"
-              />
-              Nouvelle intervention
-            </label>
-          )}
-        </div>
-        {customMode || typeChoices.length === 0 ? (
-          <>
-            <input
-              type="text"
-              value={customMode ? customType : form.type}
-              onChange={(e) => (customMode ? setCustomType(e.target.value) : set('type', e.target.value))}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-              placeholder="Ex: Réparation volet roulant"
-            />
-            <p className="text-xs text-blue-600 mt-1">
-              {typeChoices.length === 0
-                ? "Aucune tâche trouvée dans le corps d'état « Menuiserie »."
-                : "Cette nouvelle intervention sera ajoutée à ton corps d'état Menuiserie."}
-            </p>
-          </>
-        ) : (
-          <select
-            value={form.type}
-            onChange={(e) => set('type', e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          >
-            <option value="">— Choisir une intervention —</option>
-            {typeChoices.map((task) => (
-              <option key={task} value={task}>{task}</option>
-            ))}
-          </select>
-        )}
-      </div>
-
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium mb-1">Client *</label>
@@ -290,6 +266,19 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
         </div>
       </div>
 
+      <div>
+        <label className="block text-sm font-medium mb-2">Interventions *</label>
+        <InterventionLinesEditor
+          lines={interventionLines}
+          onChange={setInterventionLines}
+          interventionOptions={interventionOptions}
+        />
+        <p className="text-xs text-gray-500 mt-2">
+          Ajoute toutes les interventions à effectuer à cette adresse. Le menuisier
+          renseignera les cotes, photos et statut pour chacune indépendamment.
+        </p>
+      </div>
+
       <div className="flex justify-end gap-3 pt-2">
         <button onClick={onCancel} className="px-4 py-2 text-gray-600 rounded-lg hover:bg-gray-100">
           Annuler
@@ -333,11 +322,10 @@ const OrderDetail = ({ order }) => {
         </button>
       </div>
     <div className="grid grid-cols-2 gap-3 text-sm">
-      <div><span className="text-gray-500">Type :</span> {typeLabel(order.type)}</div>
       <div>
         <span className="text-gray-500">Statut :</span>{' '}
-        <span className={`px-2 py-0.5 rounded-full text-xs ${MENUISERIE_STATUS_STYLES[order.status] || ''}`}>
-          {statusLabel(order.status)}
+        <span className={`px-2 py-0.5 rounded-full text-xs ${MENUISERIE_STATUS_STYLES[computeOrderStatus(orderInterventions(order))] || ''}`}>
+          {statusLabel(computeOrderStatus(orderInterventions(order)))}
         </span>
       </div>
       {order.client_phone && <div><span className="text-gray-500">Tél :</span> {order.client_phone}</div>}
@@ -351,9 +339,6 @@ const OrderDetail = ({ order }) => {
       {order.scheduled_date && (
         <div><span className="text-gray-500">Prévu :</span> {new Date(order.scheduled_date).toLocaleDateString('fr-FR')}</div>
       )}
-      {order.completed_date && (
-        <div><span className="text-gray-500">Réalisé :</span> {new Date(order.completed_date).toLocaleDateString('fr-FR')}</div>
-      )}
     </div>
 
     {order.description && (
@@ -363,35 +348,52 @@ const OrderDetail = ({ order }) => {
       </div>
     )}
 
-    <div>
-      <h3 className="font-medium text-gray-700 mb-2">Cotes relevées</h3>
-      <MeasurementsEditor measurements={order.measurements || []} onChange={() => {}} readOnly />
-    </div>
-
-    <div>
-      <h3 className="font-medium text-gray-700 mb-2">Photos</h3>
-      {(order.photos || []).length === 0 ? (
-        <p className="text-sm text-gray-400 italic">Aucune photo.</p>
-      ) : (
-        <div className="grid grid-cols-3 gap-3">
-          {order.photos.map((p) => (
-            <div key={p.id} className="relative">
-              <img src={p.url} alt={p.category} className="w-full h-28 object-cover rounded-lg" />
-              <span className="absolute bottom-1 left-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded">
-                {MENUISERIE_PHOTO_CATEGORIES[p.category] || p.category}
-              </span>
+    <div className="space-y-4">
+      <h3 className="font-medium text-gray-700">Interventions ({orderInterventions(order).length})</h3>
+      {orderInterventions(order).map((iv, idx) => (
+        <div key={iv.id} className="border border-gray-200 rounded-lg p-4 bg-gray-50 space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="text-sm">
+              <span className="text-gray-500">#{idx + 1} —</span>{' '}
+              <span className="font-medium text-blue-700">{typeLabel(iv.type)}</span>
             </div>
-          ))}
+            <span className={`px-2 py-0.5 rounded-full text-xs ${MENUISERIE_STATUS_STYLES[iv.status] || ''}`}>
+              {statusLabel(iv.status)}
+            </span>
+          </div>
+          {iv.completed_date && (
+            <p className="text-xs text-gray-500">Réalisé le {new Date(iv.completed_date).toLocaleDateString('fr-FR')}</p>
+          )}
+          <div>
+            <h4 className="text-xs font-medium text-gray-600 mb-1">Cotes</h4>
+            <MeasurementsEditor measurements={iv.measurements || []} onChange={() => {}} readOnly />
+          </div>
+          <div>
+            <h4 className="text-xs font-medium text-gray-600 mb-1">Photos</h4>
+            {(iv.photos || []).length === 0 ? (
+              <p className="text-sm text-gray-400 italic">Aucune photo.</p>
+            ) : (
+              <div className="grid grid-cols-3 gap-3">
+                {iv.photos.map((p) => (
+                  <div key={p.id} className="relative">
+                    <img src={p.url} alt={p.category} className="w-full h-28 object-cover rounded-lg" />
+                    <span className="absolute bottom-1 left-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded">
+                      {MENUISERIE_PHOTO_CATEGORIES[p.category] || p.category}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          {iv.notes && (
+            <div>
+              <h4 className="text-xs font-medium text-gray-600 mb-1">Notes du menuisier</h4>
+              <p className="text-sm text-gray-600 whitespace-pre-wrap">{iv.notes}</p>
+            </div>
+          )}
         </div>
-      )}
+      ))}
     </div>
-
-    {order.notes && (
-      <div>
-        <h3 className="font-medium text-gray-700 mb-1">Notes du menuisier</h3>
-        <p className="text-sm text-gray-600 whitespace-pre-wrap">{order.notes}</p>
-      </div>
-    )}
     </div>
   );
 };
@@ -447,25 +449,28 @@ function MenuiserieManagement() {
     loadData();
   }, [loadData]);
 
-  // Persiste une nouvelle tâche dans le corps d'état Menuiserie pour qu'elle
-  // soit disponible dans la liste déroulante des prochains bons.
-  const persistCustomTaskIfAny = async (customTask) => {
-    if (!customTask) return;
+  // Persiste de nouvelles tâches dans le corps d'état Menuiserie pour qu'elles
+  // soient disponibles dans la liste déroulante des prochains bons.
+  const persistCustomTasksIfAny = async (customTasks) => {
+    const tasks = Array.isArray(customTasks) ? customTasks : (customTasks ? [customTasks] : []);
+    const toAdd = tasks.filter(Boolean);
+    if (toAdd.length === 0) return;
     if (!menuiserieTrade) {
-      console.warn('Aucun corps d\'état Menuiserie trouvé — tâche custom non sauvée.');
+      console.warn('Aucun corps d\'état Menuiserie trouvé — tâches custom non sauvées.');
       return;
     }
-    if ((menuiserieTrade.tasks || []).includes(customTask)) return;
+    const existing = new Set(menuiserieTrade.tasks || []);
+    const additions = toAdd.filter((t) => !existing.has(t));
+    if (additions.length === 0) return;
     try {
       const updatedTrade = {
         ...menuiserieTrade,
-        tasks: [...(menuiserieTrade.tasks || []), customTask],
+        tasks: [...(menuiserieTrade.tasks || []), ...additions],
         updated_at: new Date().toISOString(),
       };
       await DBService.store(STORES.TRADES, updatedTrade);
     } catch (e) {
-      console.error('Erreur ajout tâche au corps d\'état:', e);
-      // On ne bloque pas la création du bon pour autant.
+      console.error('Erreur ajout tâches au corps d\'état:', e);
     }
   };
 
@@ -484,18 +489,20 @@ function MenuiserieManagement() {
 
   const handleCreate = async (formData) => {
     try {
-      const { _customTypeToPersist, _customCAToPersist, ...orderFields } = formData;
+      const { _customTypesToPersist, _customCAToPersist, ...orderFields } = formData;
       const newOrder = {
         ...orderFields,
         id: generateUUID(),
-        status: 'todo',
+        // Le statut top-level est désormais dérivé de interventions[].status,
+        // on l'initialise à 'todo' pour la rétro-compatibilité côté requêtes.
+        status: computeOrderStatus(orderFields.interventions),
         measurements: [],
         photos: [],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
       await DBService.store(STORES.MENUISERIE, newOrder);
-      await persistCustomTaskIfAny(_customTypeToPersist);
+      await persistCustomTasksIfAny(_customTypesToPersist);
       await persistCustomCAIfAny(_customCAToPersist);
       setModal({ type: null });
       loadData();
@@ -508,14 +515,15 @@ function MenuiserieManagement() {
   const handleEdit = async (formData) => {
     try {
       const { assigned_profile, ...rest } = modal.data; // eslint-disable-line no-unused-vars
-      const { _customTypeToPersist, _customCAToPersist, ...orderFields } = formData;
+      const { _customTypesToPersist, _customCAToPersist, ...orderFields } = formData;
       const updated = {
         ...rest,
         ...orderFields,
+        status: computeOrderStatus(orderFields.interventions),
         updated_at: new Date().toISOString(),
       };
       await DBService.store(STORES.MENUISERIE, updated);
-      await persistCustomTaskIfAny(_customTypeToPersist);
+      await persistCustomTasksIfAny(_customTypesToPersist);
       await persistCustomCAIfAny(_customCAToPersist);
       setModal({ type: null });
       loadData();
@@ -538,27 +546,39 @@ function MenuiserieManagement() {
 
   const filtered = orders.filter((o) => {
     const term = search.toLowerCase();
+    const ivs = orderInterventions(o);
     const matchesSearch =
       !term ||
       (o.client_name || '').toLowerCase().includes(term) ||
       (o.address || '').toLowerCase().includes(term) ||
-      (o.reference || '').toLowerCase().includes(term);
-    const matchesStatus = statusFilter === 'all' || o.status === statusFilter;
-    const matchesType = typeFilter === 'all' || o.type === typeFilter;
+      (o.reference || '').toLowerCase().includes(term) ||
+      (o.bt_number || '').toLowerCase().includes(term);
+    const aggStatus = computeOrderStatus(ivs);
+    const matchesStatus = statusFilter === 'all' || aggStatus === statusFilter;
+    // Le filtre type matche si N'IMPORTE QUELLE intervention du bon a ce type.
+    const matchesType = typeFilter === 'all' || ivs.some((iv) => iv.type === typeFilter);
     return matchesSearch && matchesStatus && matchesType;
   });
 
-  const stats = {
-    total: orders.length,
-    todo: orders.filter((o) => o.status === 'todo').length,
-    inProgress: orders.filter((o) => o.status === 'in_progress').length,
-    completed: orders.filter((o) => o.status === 'completed').length,
-  };
+  const stats = orders.reduce(
+    (acc, o) => {
+      const s = computeOrderStatus(orderInterventions(o));
+      acc.total++;
+      if (s === 'todo') acc.todo++;
+      else if (s === 'in_progress') acc.inProgress++;
+      else if (s === 'completed') acc.completed++;
+      return acc;
+    },
+    { total: 0, todo: 0, inProgress: 0, completed: 0 },
+  );
 
-  // Options du filtre « type » : tâches du corps d'état + types déjà présents
-  // sur des bons (au cas où une tâche aurait été renommée/supprimée).
+  // Options du filtre « type » : tâches du corps d'état + types présents dans
+  // les interventions des bons (au cas où une tâche aurait été renommée/supprimée).
   const typeFilterOptions = Array.from(
-    new Set([...interventionOptions, ...orders.map((o) => o.type).filter(Boolean)])
+    new Set([
+      ...interventionOptions,
+      ...orders.flatMap((o) => orderInterventions(o).map((iv) => iv.type)).filter(Boolean),
+    ])
   );
 
   if (isLoading) {
@@ -616,7 +636,11 @@ function MenuiserieManagement() {
         {filtered.length === 0 && (
           <div className="p-8 text-center text-gray-500">Aucun bon ne correspond.</div>
         )}
-        {filtered.map((order) => (
+        {filtered.map((order) => {
+          const ivs = orderInterventions(order);
+          const aggregatedStatus = computeOrderStatus(ivs);
+          const completedCount = ivs.filter((i) => i.status === 'completed').length;
+          return (
           <div key={order.id} className="p-4 flex items-center justify-between gap-4">
             <div className="space-y-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
@@ -625,11 +649,34 @@ function MenuiserieManagement() {
                   <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded">BT {order.bt_number}</span>
                 )}
                 {order.reference && <span className="text-xs text-gray-400">({order.reference})</span>}
-                <span className={`px-2 py-0.5 rounded-full text-xs ${MENUISERIE_STATUS_STYLES[order.status] || ''}`}>
-                  {statusLabel(order.status)}
+                <span className={`px-2 py-0.5 rounded-full text-xs ${MENUISERIE_STATUS_STYLES[aggregatedStatus] || ''}`}>
+                  {statusLabel(aggregatedStatus)}
                 </span>
+                {ivs.length > 1 && (
+                  <span className="text-xs text-gray-500">
+                    {completedCount}/{ivs.length} interventions
+                  </span>
+                )}
               </div>
-              <p className="text-sm text-blue-600">{typeLabel(order.type)}</p>
+              <div className="text-sm text-blue-600 space-y-0.5">
+                {ivs.length === 0 ? (
+                  <span className="text-gray-400 italic">Aucune intervention</span>
+                ) : ivs.length === 1 ? (
+                  <span>{typeLabel(ivs[0].type)}</span>
+                ) : (
+                  <ul className="list-disc list-inside">
+                    {ivs.slice(0, 3).map((iv) => (
+                      <li key={iv.id}>
+                        {typeLabel(iv.type)}{' '}
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${MENUISERIE_STATUS_STYLES[iv.status] || ''}`}>
+                          {statusLabel(iv.status)}
+                        </span>
+                      </li>
+                    ))}
+                    {ivs.length > 3 && <li className="text-gray-400">+ {ivs.length - 3} autres…</li>}
+                  </ul>
+                )}
+              </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
                 {order.address && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{order.address}</span>}
                 <span className="flex items-center gap-1">
@@ -659,7 +706,8 @@ function MenuiserieManagement() {
               </button>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {modal.type === 'create' && (

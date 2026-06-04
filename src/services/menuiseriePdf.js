@@ -1,5 +1,8 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-import { typeLabel, statusLabel, MENUISERIE_PHOTO_CATEGORIES } from './menuiserieService';
+import {
+  typeLabel, statusLabel, MENUISERIE_PHOTO_CATEGORIES,
+  orderInterventions, computeOrderStatus,
+} from './menuiserieService';
 
 // Génère un PDF complet pour un bon de menuiserie (en-tête, détails, cotes,
 // photos, notes) et l'ouvre dans un nouvel onglet (desktop) ou retourne le
@@ -61,8 +64,11 @@ export async function generateMenuiseriePdf(order) {
       page.drawText('BON DE MENUISERIE', {
         x: MARGIN, y: PAGE_HEIGHT - 40, size: 24, font: helveticaBold, color: headerTextColor,
       });
-      const typeText = cleanText(typeLabel(order.type));
-      page.drawText(typeText, {
+      const interventions = orderInterventions(order);
+      const sub = interventions.length === 1
+        ? cleanText(typeLabel(interventions[0].type))
+        : `${interventions.length} interventions`;
+      page.drawText(sub, {
         x: MARGIN, y: PAGE_HEIGHT - 70, size: 14, font: helvetica, color: headerTextColor,
       });
       if (order.reference) {
@@ -76,7 +82,8 @@ export async function generateMenuiseriePdf(order) {
           color: headerTextColor,
         });
       }
-      const statusText = `Statut : ${cleanText(statusLabel(order.status))}`;
+      const aggStatus = computeOrderStatus(interventions);
+      const statusText = `Statut : ${cleanText(statusLabel(aggStatus))}`;
       const statusWidth = helveticaBold.widthOfTextAtSize(statusText, 12);
       page.drawText(statusText, {
         x: PAGE_WIDTH - MARGIN - statusWidth,
@@ -159,143 +166,151 @@ export async function generateMenuiseriePdf(order) {
     y -= 8;
   }
 
-  // --- Cotes ------------------------------------------------------------------
-  const measurements = Array.isArray(order.measurements) ? order.measurements : [];
-  if (measurements.length > 0) {
-    page.drawText('Cotes relevées', {
-      x: MARGIN, y, size: 12, font: helveticaBold, color: primaryColor,
-    });
-    y -= 18;
-    // En-têtes
-    const cols = [
-      { name: 'Repère', x: MARGIN, w: 200 },
-      { name: 'Largeur (mm)', x: MARGIN + 200, w: 90 },
-      { name: 'Hauteur (mm)', x: MARGIN + 290, w: 90 },
-      { name: 'Ouvrant', x: MARGIN + 380, w: 130 },
-      { name: 'Notes', x: MARGIN + 510, w: CONTENT_WIDTH - 510 },
-    ];
-    page.drawRectangle({
-      x: MARGIN, y: y - 4, width: CONTENT_WIDTH, height: 18, color: primaryColor,
-    });
-    cols.forEach((c) => {
-      page.drawText(c.name, {
-        x: c.x + 4, y: y + 2, size: 9, font: helveticaBold, color: headerTextColor,
-      });
-    });
-    y -= 18;
+  // --- Pour chaque intervention du bon : titre + cotes + photos + notes -----
+  const interventions = orderInterventions(order);
+  const PHOTO_HEIGHT = 160;
+  const PHOTO_WIDTH = (CONTENT_WIDTH - 20) / 2;
+  const photosPerRow = 2;
 
-    for (let i = 0; i < measurements.length; i++) {
-      const m = measurements[i];
-      const rowH = 16;
-      if (y - rowH < MARGIN + 30) {
-        page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-        y = drawHeader(false);
-      }
-      if (i % 2 === 0) {
-        page.drawRectangle({
-          x: MARGIN, y: y - 4, width: CONTENT_WIDTH, height: rowH, color: backgroundColor,
-        });
-      }
-      const row = [
-        cleanText(m.repere) || '—',
-        cleanText(m.largeur) || '—',
-        cleanText(m.hauteur) || '—',
-        cleanText(m.ouvrant) || '—',
-        cleanText(m.notes) || '—',
-      ];
-      // Boucle for…of plutôt que forEach pour éviter la fermeture sur `page`/`y`
-      // dans une fonction déclarée à l'intérieur d'une boucle (no-loop-func).
-      for (let idx = 0; idx < row.length; idx++) {
-        page.drawText(row[idx].slice(0, 60), {
-          x: cols[idx].x + 4, y: y + 2, size: 9, font: helvetica, color: textColor,
-        });
-      }
-      y -= rowH;
-    }
-    y -= 8;
-  }
+  for (let ivIdx = 0; ivIdx < interventions.length; ivIdx++) {
+    const iv = interventions[ivIdx];
 
-  // --- Photos -----------------------------------------------------------------
-  const photos = Array.isArray(order.photos) ? order.photos : [];
-  if (photos.length > 0) {
-    if (y - 30 < MARGIN + 30) {
+    // Sépare visuellement chaque intervention par un titre encadré
+    if (y - 40 < MARGIN + 30) {
       page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
       y = drawHeader(false);
     }
-    page.drawText('Photos', {
-      x: MARGIN, y, size: 12, font: helveticaBold, color: primaryColor,
+    page.drawRectangle({
+      x: MARGIN, y: y - 4, width: CONTENT_WIDTH, height: 24, color: primaryColor,
     });
-    y -= 18;
+    page.drawText(`Intervention ${ivIdx + 1} : ${cleanText(typeLabel(iv.type))}`, {
+      x: MARGIN + 8, y: y + 4, size: 11, font: helveticaBold, color: headerTextColor,
+    });
+    const ivStatusText = cleanText(statusLabel(iv.status));
+    const ivStatusWidth = helvetica.widthOfTextAtSize(ivStatusText, 10);
+    page.drawText(ivStatusText, {
+      x: MARGIN + CONTENT_WIDTH - ivStatusWidth - 8,
+      y: y + 5, size: 10, font: helvetica, color: headerTextColor,
+    });
+    y -= 30;
 
-    const PHOTO_HEIGHT = 160;
-    const PHOTO_WIDTH = (CONTENT_WIDTH - 20) / 2;
-    const photosPerRow = 2;
-    let col = 0;
+    // Cotes
+    const measurements = Array.isArray(iv.measurements) ? iv.measurements : [];
+    if (measurements.length > 0) {
+      page.drawText('Cotes relevées', {
+        x: MARGIN, y, size: 10, font: helveticaBold, color: primaryColor,
+      });
+      y -= 16;
+      const cols = [
+        { name: 'Repère', x: MARGIN, w: 200 },
+        { name: 'Largeur (mm)', x: MARGIN + 200, w: 90 },
+        { name: 'Hauteur (mm)', x: MARGIN + 290, w: 90 },
+        { name: 'Ouvrant', x: MARGIN + 380, w: 130 },
+        { name: 'Notes', x: MARGIN + 510, w: CONTENT_WIDTH - 510 },
+      ];
+      page.drawRectangle({
+        x: MARGIN, y: y - 4, width: CONTENT_WIDTH, height: 16, color: primaryColor,
+      });
+      for (let cIdx = 0; cIdx < cols.length; cIdx++) {
+        page.drawText(cols[cIdx].name, {
+          x: cols[cIdx].x + 4, y: y, size: 8, font: helveticaBold, color: headerTextColor,
+        });
+      }
+      y -= 16;
 
-    for (const photo of photos) {
-      try {
-        const response = await fetch(photo.url);
-        if (!response.ok) continue;
-        const buf = await response.arrayBuffer();
-        // pdf-lib only supports JPEG and PNG. Photos are uploaded as JPEG.
-        const img = await pdfDoc.embedJpg(buf).catch(async () => pdfDoc.embedPng(buf));
-
-        const dims = img.scale(1);
-        const scale = Math.min(
-          (PHOTO_WIDTH - 10) / dims.width,
-          (PHOTO_HEIGHT - 25) / dims.height,
-        );
-        const sw = dims.width * scale;
-        const sh = dims.height * scale;
-
-        if (col === 0 && y - PHOTO_HEIGHT < MARGIN + 30) {
+      for (let i = 0; i < measurements.length; i++) {
+        const m = measurements[i];
+        const rowH = 14;
+        if (y - rowH < MARGIN + 30) {
           page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
           y = drawHeader(false);
         }
-
-        const x = MARGIN + col * (PHOTO_WIDTH + 20) + ((PHOTO_WIDTH - sw) / 2);
-        page.drawImage(img, { x, y: y - sh - 15, width: sw, height: sh });
-
-        // Légende catégorie
-        const cat = MENUISERIE_PHOTO_CATEGORIES[photo.category] || photo.category || '';
-        if (cat) {
-          page.drawText(cleanText(cat), {
-            x: MARGIN + col * (PHOTO_WIDTH + 20) + 5,
-            y: y - 5,
-            size: 9,
-            font: helveticaOblique,
-            color: mutedColor,
+        if (i % 2 === 0) {
+          page.drawRectangle({
+            x: MARGIN, y: y - 3, width: CONTENT_WIDTH, height: rowH, color: backgroundColor,
           });
         }
-      } catch (e) {
-        console.warn('Photo PDF skip :', e);
+        const row = [
+          cleanText(m.repere) || '—',
+          cleanText(m.largeur) || '—',
+          cleanText(m.hauteur) || '—',
+          cleanText(m.ouvrant) || '—',
+          cleanText(m.notes) || '—',
+        ];
+        for (let idx = 0; idx < row.length; idx++) {
+          page.drawText(row[idx].slice(0, 60), {
+            x: cols[idx].x + 4, y: y + 1, size: 8, font: helvetica, color: textColor,
+          });
+        }
+        y -= rowH;
       }
+      y -= 6;
+    }
 
-      col++;
-      if (col >= photosPerRow) {
-        col = 0;
-        y -= PHOTO_HEIGHT + 10;
+    // Photos
+    const photos = Array.isArray(iv.photos) ? iv.photos : [];
+    if (photos.length > 0) {
+      if (y - 25 < MARGIN + 30) {
+        page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+        y = drawHeader(false);
       }
+      page.drawText('Photos', {
+        x: MARGIN, y, size: 10, font: helveticaBold, color: primaryColor,
+      });
+      y -= 16;
+      let col = 0;
+      for (const photo of photos) {
+        try {
+          const response = await fetch(photo.url);
+          if (!response.ok) continue;
+          const buf = await response.arrayBuffer();
+          const img = await pdfDoc.embedJpg(buf).catch(async () => pdfDoc.embedPng(buf));
+          const dims = img.scale(1);
+          const scale = Math.min((PHOTO_WIDTH - 10) / dims.width, (PHOTO_HEIGHT - 25) / dims.height);
+          const sw = dims.width * scale;
+          const sh = dims.height * scale;
+          if (col === 0 && y - PHOTO_HEIGHT < MARGIN + 30) {
+            page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+            y = drawHeader(false);
+          }
+          const x = MARGIN + col * (PHOTO_WIDTH + 20) + ((PHOTO_WIDTH - sw) / 2);
+          page.drawImage(img, { x, y: y - sh - 15, width: sw, height: sh });
+          const cat = MENUISERIE_PHOTO_CATEGORIES[photo.category] || photo.category || '';
+          if (cat) {
+            page.drawText(cleanText(cat), {
+              x: MARGIN + col * (PHOTO_WIDTH + 20) + 5,
+              y: y - 5,
+              size: 9, font: helveticaOblique, color: mutedColor,
+            });
+          }
+        } catch (e) {
+          console.warn('Photo PDF skip :', e);
+        }
+        col++;
+        if (col >= photosPerRow) { col = 0; y -= PHOTO_HEIGHT + 10; }
+      }
+      if (col !== 0) y -= PHOTO_HEIGHT + 10;
+      y -= 6;
     }
-    if (col !== 0) y -= PHOTO_HEIGHT + 10;
-    y -= 8;
-  }
 
-  // --- Notes ------------------------------------------------------------------
-  if (order.notes) {
-    if (y - 60 < MARGIN + 30) {
-      page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-      y = drawHeader(false);
-    }
-    page.drawText('Notes du menuisier', {
-      x: MARGIN, y, size: 12, font: helveticaBold, color: primaryColor,
-    });
-    y -= 18;
-    const lines = cleanText(order.notes).split('\n');
-    for (const line of lines) {
-      page.drawText(line.slice(0, 130), { x: MARGIN, y, size: 10, font: helvetica, color: textColor });
+    // Notes de l'intervention
+    if (iv.notes) {
+      if (y - 40 < MARGIN + 30) {
+        page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+        y = drawHeader(false);
+      }
+      page.drawText('Notes', {
+        x: MARGIN, y, size: 10, font: helveticaBold, color: primaryColor,
+      });
       y -= 14;
+      const lines = cleanText(iv.notes).split('\n');
+      for (const line of lines) {
+        page.drawText(line.slice(0, 130), { x: MARGIN, y, size: 9, font: helvetica, color: textColor });
+        y -= 12;
+      }
     }
+
+    y -= 12; // espacement entre interventions
   }
 
   // --- Pieds de page ----------------------------------------------------------
