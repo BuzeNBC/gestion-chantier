@@ -34,10 +34,13 @@ const emptyForm = {
   assigned_to: '',
   scheduled_date: '',
   reference: '',
+  bt_number: '',
+  charge_affaire: '',
 };
 
 // `interventionOptions` = les tâches du corps d'état « Menuiserie ».
-const OrderForm = ({ order, menuisiers, interventionOptions, onSubmit, onCancel }) => {
+// `chargeAffaireOptions` = liste des chargé(e)s d'affaire (table charge_affaires).
+const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOptions, onSubmit, onCancel }) => {
   const [form, setForm] = useState(order ? {
     type: order.type || '',
     client_name: order.client_name || '',
@@ -47,11 +50,16 @@ const OrderForm = ({ order, menuisiers, interventionOptions, onSubmit, onCancel 
     assigned_to: order.assigned_to || '',
     scheduled_date: order.scheduled_date || '',
     reference: order.reference || '',
+    bt_number: order.bt_number || '',
+    charge_affaire: order.charge_affaire || '',
   } : emptyForm);
   // Mode "intervention personnalisée" : l'admin tape une nouvelle intervention
   // qui sera ajoutée au corps d'état Menuiserie (via onSubmit) en plus du bon.
   const [customMode, setCustomMode] = useState(false);
   const [customType, setCustomType] = useState('');
+  // Idem pour le chargé d'affaire : possibilité d'en ajouter un nouveau.
+  const [customCAMode, setCustomCAMode] = useState(false);
+  const [customCA, setCustomCA] = useState('');
 
   const set = (field, value) => setForm((f) => ({ ...f, [field]: value }));
 
@@ -60,6 +68,11 @@ const OrderForm = ({ order, menuisiers, interventionOptions, onSubmit, onCancel 
   const typeChoices = form.type && !interventionOptions.includes(form.type)
     ? [form.type, ...interventionOptions]
     : interventionOptions;
+
+  // Même logique pour le chargé d'affaire (préservation à l'édition).
+  const caChoices = form.charge_affaire && !chargeAffaireOptions.includes(form.charge_affaire)
+    ? [form.charge_affaire, ...chargeAffaireOptions]
+    : chargeAffaireOptions;
 
   const submit = () => {
     if (!form.client_name.trim()) {
@@ -71,16 +84,20 @@ const OrderForm = ({ order, menuisiers, interventionOptions, onSubmit, onCancel 
       alert("Le type d'intervention est obligatoire.");
       return;
     }
+    const effectiveCA = customCAMode ? customCA.trim() : form.charge_affaire.trim();
     // Normalise les chaînes vides en null pour les colonnes nullable
     // (sinon Postgres rejette `""` sur `date`, et la FK profile préfère `null`).
     onSubmit({
       ...form,
       type: effectiveType,
+      charge_affaire: effectiveCA || null,
       assigned_to: form.assigned_to || null,
       scheduled_date: form.scheduled_date || null,
       reference: form.reference || null,
-      // Le parent persistera cette tâche dans le corps d'état Menuiserie.
+      bt_number: form.bt_number || null,
+      // Le parent persistera ces nouvelles entrées (corps d'état + table charge_affaires).
       _customTypeToPersist: customMode && !interventionOptions.includes(effectiveType) ? effectiveType : null,
+      _customCAToPersist: customCAMode && effectiveCA && !chargeAffaireOptions.includes(effectiveCA) ? effectiveCA : null,
     });
   };
 
@@ -204,14 +221,73 @@ const OrderForm = ({ order, menuisiers, interventionOptions, onSubmit, onCancel 
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-1">Référence (optionnel)</label>
-        <input
-          type="text"
-          value={form.reference}
-          onChange={(e) => set('reference', e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          placeholder="Ex: BM-2026-001"
-        />
+        <div className="flex items-center justify-between mb-1">
+          <label className="block text-sm font-medium">Chargé(e) d'affaire</label>
+          {caChoices.length > 0 && (
+            <label className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={customCAMode}
+                onChange={(e) => {
+                  setCustomCAMode(e.target.checked);
+                  if (!e.target.checked) setCustomCA('');
+                }}
+                className="h-3.5 w-3.5"
+              />
+              Nouveau chargé d'affaire
+            </label>
+          )}
+        </div>
+        {customCAMode || caChoices.length === 0 ? (
+          <>
+            <input
+              type="text"
+              value={customCAMode ? customCA : form.charge_affaire}
+              onChange={(e) => (customCAMode ? setCustomCA(e.target.value) : set('charge_affaire', e.target.value))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              placeholder="Prénom Nom"
+            />
+            {customCAMode && (
+              <p className="text-xs text-blue-600 mt-1">
+                Ce chargé d'affaire sera ajouté à la liste pour les prochains bons.
+              </p>
+            )}
+          </>
+        ) : (
+          <select
+            value={form.charge_affaire}
+            onChange={(e) => set('charge_affaire', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          >
+            <option value="">— Non renseigné —</option>
+            {caChoices.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium mb-1">N° de BT</label>
+          <input
+            type="text"
+            value={form.bt_number}
+            onChange={(e) => set('bt_number', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            placeholder="Référence demande du bon de commande"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Référence (optionnel)</label>
+          <input
+            type="text"
+            value={form.reference}
+            onChange={(e) => set('reference', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            placeholder="Ex: BM-2026-001"
+          />
+        </div>
       </div>
 
       <div className="flex justify-end gap-3 pt-2">
@@ -266,6 +342,12 @@ const OrderDetail = ({ order }) => {
       </div>
       {order.client_phone && <div><span className="text-gray-500">Tél :</span> {order.client_phone}</div>}
       {order.address && <div className="col-span-2"><span className="text-gray-500">Adresse :</span> {order.address}</div>}
+      {order.charge_affaire && (
+        <div><span className="text-gray-500">Chargé d'affaire :</span> {order.charge_affaire}</div>
+      )}
+      {order.bt_number && (
+        <div><span className="text-gray-500">N° de BT :</span> {order.bt_number}</div>
+      )}
       {order.scheduled_date && (
         <div><span className="text-gray-500">Prévu :</span> {new Date(order.scheduled_date).toLocaleDateString('fr-FR')}</div>
       )}
@@ -318,6 +400,7 @@ function MenuiserieManagement() {
   const [orders, setOrders] = useState([]);
   const [menuisiers, setMenuisiers] = useState([]);
   const [interventionOptions, setInterventionOptions] = useState([]);
+  const [chargeAffaireOptions, setChargeAffaireOptions] = useState([]);
   // On garde la référence au corps d'état Menuiserie pour pouvoir y persister
   // une nouvelle tâche créée à la volée depuis le formulaire de bon.
   const [menuiserieTrade, setMenuiserieTrade] = useState(null);
@@ -330,21 +413,24 @@ function MenuiserieManagement() {
   const loadData = useCallback(async () => {
     try {
       setIsLoading(true);
-      const [ordersRes, menuisiersRes, tradesRes] = await Promise.all([
+      const [ordersRes, menuisiersRes, tradesRes, caRes] = await Promise.all([
         supabase
           .from('menuiserie_orders')
           .select('*, assigned_profile:assigned_to(id, Name)')
           .order('created_at', { ascending: false }),
         supabase.from('profiles').select('id, Name, role').eq('role', 'menuisier'),
         supabase.from('trades').select('*'),
+        supabase.from('charge_affaires').select('name').order('name', { ascending: true }),
       ]);
 
       if (ordersRes.error) throw ordersRes.error;
       if (menuisiersRes.error) throw menuisiersRes.error;
       if (tradesRes.error) throw tradesRes.error;
+      if (caRes.error) throw caRes.error;
 
       setOrders(ordersRes.data || []);
       setMenuisiers(menuisiersRes.data || []);
+      setChargeAffaireOptions((caRes.data || []).map((r) => r.name));
 
       // Les types d'intervention proviennent des tâches du corps d'état « Menuiserie »
       const trade = findMenuiserieTrade(tradesRes.data || []);
@@ -383,9 +469,22 @@ function MenuiserieManagement() {
     }
   };
 
+  // Persiste un nouveau chargé d'affaire pour qu'il apparaisse dans la liste
+  // déroulante des prochains bons.
+  const persistCustomCAIfAny = async (customCA) => {
+    if (!customCA) return;
+    if (chargeAffaireOptions.includes(customCA)) return;
+    try {
+      const { error } = await supabase.from('charge_affaires').insert({ name: customCA });
+      if (error && error.code !== '23505') throw error; // 23505 = unique violation
+    } catch (e) {
+      console.error('Erreur ajout chargé d\'affaire :', e);
+    }
+  };
+
   const handleCreate = async (formData) => {
     try {
-      const { _customTypeToPersist, ...orderFields } = formData;
+      const { _customTypeToPersist, _customCAToPersist, ...orderFields } = formData;
       const newOrder = {
         ...orderFields,
         id: generateUUID(),
@@ -397,6 +496,7 @@ function MenuiserieManagement() {
       };
       await DBService.store(STORES.MENUISERIE, newOrder);
       await persistCustomTaskIfAny(_customTypeToPersist);
+      await persistCustomCAIfAny(_customCAToPersist);
       setModal({ type: null });
       loadData();
     } catch (error) {
@@ -408,7 +508,7 @@ function MenuiserieManagement() {
   const handleEdit = async (formData) => {
     try {
       const { assigned_profile, ...rest } = modal.data; // eslint-disable-line no-unused-vars
-      const { _customTypeToPersist, ...orderFields } = formData;
+      const { _customTypeToPersist, _customCAToPersist, ...orderFields } = formData;
       const updated = {
         ...rest,
         ...orderFields,
@@ -416,6 +516,7 @@ function MenuiserieManagement() {
       };
       await DBService.store(STORES.MENUISERIE, updated);
       await persistCustomTaskIfAny(_customTypeToPersist);
+      await persistCustomCAIfAny(_customCAToPersist);
       setModal({ type: null });
       loadData();
     } catch (error) {
@@ -520,6 +621,9 @@ function MenuiserieManagement() {
             <div className="space-y-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold text-gray-800">{order.client_name || 'Client non renseigné'}</span>
+                {order.bt_number && (
+                  <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded">BT {order.bt_number}</span>
+                )}
                 {order.reference && <span className="text-xs text-gray-400">({order.reference})</span>}
                 <span className={`px-2 py-0.5 rounded-full text-xs ${MENUISERIE_STATUS_STYLES[order.status] || ''}`}>
                   {statusLabel(order.status)}
@@ -532,6 +636,9 @@ function MenuiserieManagement() {
                   <User className="h-3.5 w-3.5" />
                   {order.assigned_profile?.Name || 'Non assigné'}
                 </span>
+                {order.charge_affaire && (
+                  <span className="text-xs">CA : {order.charge_affaire}</span>
+                )}
                 {order.scheduled_date && (
                   <span className="flex items-center gap-1">
                     <Calendar className="h-3.5 w-3.5" />
@@ -560,6 +667,7 @@ function MenuiserieManagement() {
           <OrderForm
             menuisiers={menuisiers}
             interventionOptions={interventionOptions}
+            chargeAffaireOptions={chargeAffaireOptions}
             onSubmit={handleCreate}
             onCancel={() => setModal({ type: null })}
           />
@@ -571,6 +679,7 @@ function MenuiserieManagement() {
             order={modal.data}
             menuisiers={menuisiers}
             interventionOptions={interventionOptions}
+            chargeAffaireOptions={chargeAffaireOptions}
             onSubmit={handleEdit}
             onCancel={() => setModal({ type: null })}
           />

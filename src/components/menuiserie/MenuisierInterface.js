@@ -239,6 +239,16 @@ function MenuisierInterface() {
               <MapPin className="h-4 w-4 text-gray-400" /> {selected.address}
             </p>
           )}
+          {(selected.charge_affaire || selected.bt_number) && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-700 pt-2 border-t mt-2">
+              {selected.charge_affaire && (
+                <span><span className="text-gray-500">CA :</span> {selected.charge_affaire}</span>
+              )}
+              {selected.bt_number && (
+                <span><span className="text-gray-500">N° de BT :</span> {selected.bt_number}</span>
+              )}
+            </div>
+          )}
           {selected.description && (
             <p className="text-sm text-gray-600 pt-2 border-t mt-2">{selected.description}</p>
           )}

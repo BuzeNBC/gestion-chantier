@@ -97,7 +97,18 @@ export async function generateMenuiseriePdf(order) {
   let y = drawHeader(true);
 
   // --- Bloc Détails client ----------------------------------------------------
-  const detailsHeight = 130;
+  // Hauteur dynamique selon le nombre de champs effectivement présents.
+  const detailRows = [
+    ['Client', order.client_name],
+    ['Téléphone', order.client_phone],
+    ['Adresse', order.address],
+    ['Chargé d\'affaire', order.charge_affaire],
+    ['N° de BT', order.bt_number],
+    order.scheduled_date ? ['Date prévue', new Date(order.scheduled_date).toLocaleDateString('fr-FR')] : null,
+    order.completed_date ? ['Date de réalisation', new Date(order.completed_date).toLocaleDateString('fr-FR')] : null,
+  ].filter(Boolean);
+  const detailsHeight = Math.max(80, detailRows.length * 18 + 20);
+
   page.drawRectangle({
     x: MARGIN, y: y - detailsHeight,
     width: CONTENT_WIDTH, height: detailsHeight,
@@ -107,24 +118,15 @@ export async function generateMenuiseriePdf(order) {
     x: MARGIN, y: y - detailsHeight, width: 4, height: detailsHeight, color: primaryColor,
   });
 
-  let dy = y - 25;
-  const label = (txt, val, lineSize = 11) => {
+  let dy = y - 18;
+  for (const [txt, val] of detailRows) {
     page.drawText(`${txt} :`, {
       x: MARGIN + 15, y: dy, size: 10, font: helveticaBold, color: mutedColor,
     });
     page.drawText(cleanText(val || '—'), {
-      x: MARGIN + 100, y: dy, size: lineSize, font: helvetica, color: textColor,
+      x: MARGIN + 120, y: dy, size: 11, font: helvetica, color: textColor,
     });
     dy -= 18;
-  };
-  label('Client', order.client_name);
-  label('Téléphone', order.client_phone);
-  label('Adresse', order.address);
-  if (order.scheduled_date) {
-    label('Date prévue', new Date(order.scheduled_date).toLocaleDateString('fr-FR'));
-  }
-  if (order.completed_date) {
-    label('Date de réalisation', new Date(order.completed_date).toLocaleDateString('fr-FR'));
   }
   y = y - detailsHeight - 15;
 
