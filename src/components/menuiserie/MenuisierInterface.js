@@ -13,6 +13,7 @@ import {
 import { generateMenuiseriePdf, openOrDownloadPdf } from '../../services/menuiseriePdf';
 import PhotoUploadButton from '../PhotoUploadButton';
 import MeasurementsEditor from './MeasurementsEditor';
+import AttachmentsEditor from './AttachmentsEditor';
 
 function MenuisierInterface() {
   const { user, signOut } = useAuth();
@@ -472,6 +473,21 @@ function MenuisierInterface() {
             <p className="text-sm text-gray-600 pt-2 border-t mt-2">{selectedOrder.description}</p>
           )}
         </section>
+
+        {/* Pièces jointes envoyées par l'admin (PDF, plans, photos brutes…) */}
+        {(selectedOrder.attachments || []).length > 0 && (
+          <section className="bg-white rounded-lg shadow p-5">
+            <h2 className="font-semibold text-gray-800 mb-3">
+              Documents fournis ({selectedOrder.attachments.length})
+            </h2>
+            <AttachmentsEditor
+              attachments={selectedOrder.attachments}
+              onChange={() => {}}
+              orderId={selectedOrder.id}
+              readOnly
+            />
+          </section>
+        )}
 
         {/* Liste des interventions */}
         <section className="space-y-3">

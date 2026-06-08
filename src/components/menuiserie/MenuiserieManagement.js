@@ -12,6 +12,7 @@ import {
 import { generateMenuiseriePdf, openOrDownloadPdf } from '../../services/menuiseriePdf';
 import MeasurementsEditor from './MeasurementsEditor';
 import InterventionLinesEditor from './InterventionLinesEditor';
+import AttachmentsEditor from './AttachmentsEditor';
 
 const Modal = memo(({ title, onClose, children, wide = false }) => (
   <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -76,6 +77,10 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
   // Chargé d'affaire : possibilité d'en ajouter un nouveau.
   const [customCAMode, setCustomCAMode] = useState(false);
   const [customCA, setCustomCA] = useState('');
+  // Pièces jointes (PDF, images, docs…). Pour un nouveau bon on génère l'id
+  // upfront pour pouvoir uploader dans Storage avant la création de la ligne SQL.
+  const [attachments, setAttachments] = useState(order?.attachments || []);
+  const [formOrderId] = useState(() => order?.id || generateUUID());
 
   const set = (field, value) => setForm((f) => ({ ...f, [field]: value }));
 
@@ -113,6 +118,7 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
     onSubmit({
       ...form,
       interventions,
+      attachments,
       charge_affaire: effectiveCA || null,
       assigned_to: form.assigned_to || null,
       scheduled_date: form.scheduled_date || null,
@@ -121,6 +127,8 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
       // Tâches à ajouter au corps d'état Menuiserie
       _customTypesToPersist: newTaskTypes,
       _customCAToPersist: customCAMode && effectiveCA && !chargeAffaireOptions.includes(effectiveCA) ? effectiveCA : null,
+      // L'id pré-généré pour les uploads dans Storage. handleCreate l'utilisera.
+      _preGeneratedId: formOrderId,
     });
   };
 
@@ -279,6 +287,15 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
         </p>
       </div>
 
+      <div>
+        <label className="block text-sm font-medium mb-2">Pièces jointes</label>
+        <AttachmentsEditor
+          attachments={attachments}
+          onChange={setAttachments}
+          orderId={formOrderId}
+        />
+      </div>
+
       <div className="flex justify-end gap-3 pt-2">
         <button onClick={onCancel} className="px-4 py-2 text-gray-600 rounded-lg hover:bg-gray-100">
           Annuler
@@ -345,6 +362,13 @@ const OrderDetail = ({ order }) => {
       <div>
         <h3 className="font-medium text-gray-700 mb-1">Description</h3>
         <p className="text-sm text-gray-600">{order.description}</p>
+      </div>
+    )}
+
+    {(order.attachments || []).length > 0 && (
+      <div>
+        <h3 className="font-medium text-gray-700 mb-2">Pièces jointes ({order.attachments.length})</h3>
+        <AttachmentsEditor attachments={order.attachments} onChange={() => {}} orderId={order.id} readOnly />
       </div>
     )}
 
@@ -489,12 +513,13 @@ function MenuiserieManagement() {
 
   const handleCreate = async (formData) => {
     try {
-      const { _customTypesToPersist, _customCAToPersist, ...orderFields } = formData;
+      const { _customTypesToPersist, _customCAToPersist, _preGeneratedId, ...orderFields } = formData;
       const newOrder = {
         ...orderFields,
-        id: generateUUID(),
-        // Le statut top-level est désormais dérivé de interventions[].status,
-        // on l'initialise à 'todo' pour la rétro-compatibilité côté requêtes.
+        // Important : on utilise l'id pré-généré au moment de l'ouverture du
+        // formulaire pour que les pièces jointes (déjà uploadées dans Storage
+        // sous ce préfixe) restent cohérentes avec l'id du bon.
+        id: _preGeneratedId || generateUUID(),
         status: computeOrderStatus(orderFields.interventions),
         measurements: [],
         photos: [],
@@ -515,7 +540,7 @@ function MenuiserieManagement() {
   const handleEdit = async (formData) => {
     try {
       const { assigned_profile, ...rest } = modal.data; // eslint-disable-line no-unused-vars
-      const { _customTypesToPersist, _customCAToPersist, ...orderFields } = formData;
+      const { _customTypesToPersist, _customCAToPersist, _preGeneratedId, ...orderFields } = formData; // eslint-disable-line no-unused-vars
       const updated = {
         ...rest,
         ...orderFields,
