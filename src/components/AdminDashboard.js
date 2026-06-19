@@ -268,6 +268,20 @@ function AdminDashboard() {
             </>
           )}
 
+          {/* Onglet Menuiserie pour les ouvriers — leur permet de consulter
+              et d'éditer tous les bons menuiserie (coordination chantier). */}
+          {userRole === 'worker' && (
+            <button
+              onClick={() => setActivePage('menuiserie')}
+              className={`w-full flex items-center px-4 py-2 rounded-lg ${
+                activePage === 'menuiserie' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100'
+              } transition duration-300`}
+            >
+              <DoorOpen className="h-5 w-5 mr-2" />
+              Menuiserie
+            </button>
+          )}
+
           {/* Ne montrer le bouton de changement de rôle que pour les vrais admins */}
           {realUserRole === 'admin' && (
             <button
@@ -308,6 +322,11 @@ function AdminDashboard() {
             {activePage === 'menuiserie' && <MenuiserieManagement />}
             {activePage === 'completed' && <CompletedSites />}
           </>
+        ) : activePage === 'menuiserie' ? (
+          // Ouvrier sur l'onglet Menuiserie : on réutilise l'interface
+          // menuisier en mode "embedded" (sans header logout) + showAllBons
+          // (l'ouvrier voit TOUS les bons, pas seulement les siens).
+          <MenuisierInterface embedded showAllBons />
         ) : (
           <WorkerInterface isAdminInWorkerMode={realUserRole === 'admin'} />
         )}

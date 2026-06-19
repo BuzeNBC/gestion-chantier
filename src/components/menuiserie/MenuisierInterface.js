@@ -15,7 +15,14 @@ import PhotoUploadButton from '../PhotoUploadButton';
 import MeasurementsEditor from './MeasurementsEditor';
 import AttachmentsEditor from './AttachmentsEditor';
 
-function MenuisierInterface() {
+// Props :
+// - embedded (default false) : si true, n'affiche pas le header de page
+//   (titre + bouton Déconnexion) parce que le composant est rendu à l'intérieur
+//   du layout AdminDashboard (sidebar déjà présente avec son propre logout).
+// - showAllBons (default false) : si true, charge TOUS les bons de menuiserie
+//   au lieu de filtrer par assigned_to = user.id. Utilisé pour les ouvriers
+//   qui ont accès en lecture/écriture à tous les bons pour coordination.
+function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
   const { user, signOut } = useAuth();
   const [orders, setOrders] = useState([]);
   const [interventionOptions, setInterventionOptions] = useState([]);
@@ -40,12 +47,15 @@ function MenuisierInterface() {
     if (!user) return;
     try {
       setIsLoading(true);
+      let query = supabase
+        .from('menuiserie_orders')
+        .select('*')
+        .order('scheduled_date', { ascending: true, nullsFirst: false });
+      if (!showAllBons) {
+        query = query.eq('assigned_to', user.id);
+      }
       const [ordersRes, tradesRes] = await Promise.all([
-        supabase
-          .from('menuiserie_orders')
-          .select('*')
-          .eq('assigned_to', user.id)
-          .order('scheduled_date', { ascending: true, nullsFirst: false }),
+        query,
         supabase.from('trades').select('*'),
       ]);
       if (ordersRes.error) throw ordersRes.error;
@@ -58,7 +68,7 @@ function MenuisierInterface() {
     } finally {
       setIsLoading(false);
     }
-  }, [user]);
+  }, [user, showAllBons]);
 
   useEffect(() => {
     loadData();
@@ -198,19 +208,28 @@ function MenuisierInterface() {
   // ============================================================ LISTE DES BONS
   if (!selectedOrder) {
     return (
-      <div className="min-h-screen bg-gray-100">
-        <header className="bg-white shadow-sm">
-          <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
-            <h1 className="text-xl font-bold text-gray-800">Mes interventions menuiserie</h1>
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-2 text-sm text-red-600 hover:bg-red-50 px-3 py-2 rounded-lg"
-            >
-              <LogOut className="h-4 w-4" />
-              Déconnexion
-            </button>
+      <div className={embedded ? 'bg-gray-100' : 'min-h-screen bg-gray-100'}>
+        {!embedded && (
+          <header className="bg-white shadow-sm">
+            <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
+              <h1 className="text-xl font-bold text-gray-800">Mes interventions menuiserie</h1>
+              <button
+                onClick={handleLogout}
+                className="flex items-center gap-2 text-sm text-red-600 hover:bg-red-50 px-3 py-2 rounded-lg"
+              >
+                <LogOut className="h-4 w-4" />
+                Déconnexion
+              </button>
+            </div>
+          </header>
+        )}
+        {embedded && (
+          <div className="max-w-3xl mx-auto px-4 pt-4">
+            <h2 className="text-lg font-semibold text-gray-700">
+              {showAllBons ? 'Tous les bons de menuiserie' : 'Mes interventions menuiserie'}
+            </h2>
           </div>
-        </header>
+        )}
 
         <main className="max-w-3xl mx-auto px-4 py-6 space-y-3">
           {orders.length === 0 && (
