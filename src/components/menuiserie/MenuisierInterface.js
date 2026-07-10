@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ArrowLeft, MapPin, Phone, User, Ruler, Camera, CheckCircle,
-  Clock, Save, Trash2, ChevronRight, LogOut, FileText, X, Plus,
+  Clock, Save, Trash2, ChevronRight, LogOut, FileText, X, Plus, Search,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import {
-  MENUISERIE_STATUS_STYLES, MENUISERIE_PHOTO_CATEGORIES,
+  MENUISERIE_STATUS, MENUISERIE_STATUS_STYLES, MENUISERIE_PHOTO_CATEGORIES,
   typeLabel, statusLabel, computeOrderStatus, orderInterventions, newIntervention,
   findMenuiserieTrade,
 } from '../../services/menuiserieService';
@@ -40,8 +40,37 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
   const [addType, setAddType] = useState('');
   const [addCustomMode, setAddCustomMode] = useState(false);
   const [addCustomText, setAddCustomText] = useState('');
+  // Recherche + filtre statut (uniquement sur la liste des bons)
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const selectedOrder = orders.find((o) => o.id === selectedOrderId) || null;
+
+  // Applique la recherche texte + le filtre statut sur la liste des bons.
+  // La recherche matche client, adresse, référence, BT, chargé d'affaire, ET
+  // sur le libellé de n'importe quelle intervention du bon.
+  const filteredOrders = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return orders.filter((o) => {
+      const ivs = orderInterventions(o);
+      const aggStatus = computeOrderStatus(ivs);
+      if (statusFilter !== 'all' && aggStatus !== statusFilter) return false;
+      if (!term) return true;
+      const haystack = [
+        o.client_name,
+        o.client_phone,
+        o.address,
+        o.reference,
+        o.bt_number,
+        o.charge_affaire,
+        ...ivs.map((iv) => iv.type),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(term);
+    });
+  }, [orders, search, statusFilter]);
 
   const loadData = useCallback(async () => {
     if (!user) return;
@@ -232,13 +261,61 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
         )}
 
         <main className="max-w-3xl mx-auto px-4 py-6 space-y-3">
+          {/* Barre de recherche + filtre statut */}
+          {orders.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              <div className="relative flex-1 min-w-[180px]">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Client, adresse, BT, type d'intervention…"
+                  className="w-full pl-9 pr-9 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                />
+                {search && (
+                  <button
+                    onClick={() => setSearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                    aria-label="Effacer la recherche"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-3 py-2 text-sm border border-gray-300 rounded-lg bg-white"
+              >
+                <option value="all">Tous les statuts</option>
+                {Object.entries(MENUISERIE_STATUS).map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Compteur si un filtre est actif */}
+          {orders.length > 0 && (search || statusFilter !== 'all') && (
+            <p className="text-xs text-gray-500">
+              {filteredOrders.length} bon{filteredOrders.length > 1 ? 's' : ''} sur {orders.length}
+            </p>
+          )}
+
           {orders.length === 0 && (
             <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
               Aucune intervention ne vous est assignée pour le moment.
             </div>
           )}
 
-          {orders.map((order) => {
+          {orders.length > 0 && filteredOrders.length === 0 && (
+            <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500 text-sm">
+              Aucun bon ne correspond à ta recherche.
+            </div>
+          )}
+
+          {filteredOrders.map((order) => {
             const ivs = orderInterventions(order);
             const aggStatus = computeOrderStatus(ivs);
             const done = ivs.filter((i) => i.status === 'completed').length;
