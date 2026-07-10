@@ -76,15 +76,16 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
     if (!user) return;
     try {
       setIsLoading(true);
-      let query = supabase
-        .from('menuiserie_orders')
-        .select('*')
-        .order('scheduled_date', { ascending: true, nullsFirst: false });
-      if (!showAllBons) {
-        query = query.eq('assigned_to', user.id);
-      }
+      // On récupère TOUS les bons visibles à l'utilisateur : la sécurité
+      // (menuisier ne voit que la menuiserie, admin voit tout, worker voit
+      // tout via ses policies) est gérée côté RLS Supabase. Pas de filtre
+      // client-side sur assigned_to, sinon le menuisier louperait les bons
+      // que l'admin a créés sans lui assigner explicitement.
       const [ordersRes, tradesRes] = await Promise.all([
-        query,
+        supabase
+          .from('menuiserie_orders')
+          .select('*')
+          .order('scheduled_date', { ascending: true, nullsFirst: false }),
         supabase.from('trades').select('*'),
       ]);
       if (ordersRes.error) throw ordersRes.error;
@@ -97,7 +98,7 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
     } finally {
       setIsLoading(false);
     }
-  }, [user, showAllBons]);
+  }, [user]);
 
   useEffect(() => {
     loadData();
@@ -241,7 +242,7 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
         {!embedded && (
           <header className="bg-white shadow-sm">
             <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
-              <h1 className="text-xl font-bold text-gray-800">Mes interventions menuiserie</h1>
+              <h1 className="text-xl font-bold text-gray-800">Interventions menuiserie</h1>
               <button
                 onClick={handleLogout}
                 className="flex items-center gap-2 text-sm text-red-600 hover:bg-red-50 px-3 py-2 rounded-lg"
@@ -255,7 +256,7 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
         {embedded && (
           <div className="max-w-3xl mx-auto px-4 pt-4">
             <h2 className="text-lg font-semibold text-gray-700">
-              {showAllBons ? 'Tous les bons de menuiserie' : 'Mes interventions menuiserie'}
+              {showAllBons ? 'Tous les bons de menuiserie' : 'Interventions menuiserie'}
             </h2>
           </div>
         )}
