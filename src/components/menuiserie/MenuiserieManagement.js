@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import {
-  Plus, Edit, Trash, X, Search, Eye, MapPin, User, Calendar, FileText,
+  Plus, Edit, Trash, X, Search, Eye, MapPin, User, Calendar, FileText, Download,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { DBService, STORES, generateUUID } from '../../services/dbService';
@@ -10,6 +10,7 @@ import {
   newIntervention, computeOrderStatus, orderInterventions,
 } from '../../services/menuiserieService';
 import { generateMenuiseriePdf, openOrDownloadPdf } from '../../services/menuiseriePdf';
+import { exportMonthCsv, exportMonthPdf, monthLabel } from '../../services/menuiserieExport';
 import MeasurementsEditor from './MeasurementsEditor';
 import InterventionLinesEditor from './InterventionLinesEditor';
 import AttachmentsEditor from './AttachmentsEditor';
@@ -616,14 +617,22 @@ function MenuiserieManagement() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-4xl font-bold text-gray-800">Menuiserie</h1>
-        <button
-          onClick={() => setModal({ type: 'create' })}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-        >
-          <Plus className="h-5 w-5" /> Nouveau bon
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setModal({ type: 'export' })}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800"
+          >
+            <Download className="h-5 w-5" /> Export
+          </button>
+          <button
+            onClick={() => setModal({ type: 'create' })}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            <Plus className="h-5 w-5" /> Nouveau bon
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -763,8 +772,93 @@ function MenuiserieManagement() {
           <OrderDetail order={modal.data} />
         </Modal>
       )}
+      {modal.type === 'export' && (
+        <Modal title="Export mensuel" onClose={() => setModal({ type: null })}>
+          <ExportForm orders={orders} onClose={() => setModal({ type: null })} />
+        </Modal>
+      )}
     </div>
   );
 }
+
+// Formulaire d'export mensuel : choix du mois puis CSV (Excel) ou PDF.
+// Les lignes exportées = une par intervention, groupées par adresse.
+const ExportForm = ({ orders, onClose }) => {
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const [month, setMonth] = useState(defaultMonth);
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState('');
+
+  const runCsv = () => {
+    try {
+      const n = exportMonthCsv(orders, month);
+      setFeedback(n === 0
+        ? `Aucune intervention sur ${monthLabel(month)} — fichier vide généré.`
+        : `${n} intervention${n > 1 ? 's' : ''} exportée${n > 1 ? 's' : ''} (CSV téléchargé).`);
+    } catch (e) {
+      console.error('Erreur export CSV :', e);
+      alert("Erreur lors de l'export CSV.");
+    }
+  };
+
+  const runPdf = async () => {
+    try {
+      setBusy(true);
+      const n = await exportMonthPdf(orders, month);
+      setFeedback(n === 0
+        ? `Aucune intervention sur ${monthLabel(month)} — PDF vide généré.`
+        : `${n} intervention${n > 1 ? 's' : ''} exportée${n > 1 ? 's' : ''} (PDF ouvert).`);
+    } catch (e) {
+      console.error('Erreur export PDF :', e);
+      alert("Erreur lors de l'export PDF.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium mb-1">Mois à exporter</label>
+        <input
+          type="month"
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+        />
+        <p className="text-xs text-gray-500 mt-1">
+          Une ligne par intervention, groupée par adresse. La date de référence est
+          la date de réalisation si l'intervention est terminée, sinon la date prévue du bon.
+        </p>
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-3">
+        <button
+          onClick={runCsv}
+          disabled={busy || !month}
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-green-700 text-white rounded-lg hover:bg-green-800 disabled:opacity-50"
+        >
+          <Download className="h-4 w-4" /> Excel / CSV
+        </button>
+        <button
+          onClick={runPdf}
+          disabled={busy || !month}
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-900 disabled:opacity-50"
+        >
+          <FileText className="h-4 w-4" /> {busy ? 'Génération…' : 'PDF récapitulatif'}
+        </button>
+      </div>
+
+      {feedback && <p className="text-sm text-blue-700">{feedback}</p>}
+
+      <div className="flex justify-end pt-1">
+        <button onClick={onClose} className="px-4 py-2 text-gray-600 rounded-lg hover:bg-gray-100">
+          Fermer
+        </button>
+      </div>
+    </div>
+  );
+};
 
 export default MenuiserieManagement;
