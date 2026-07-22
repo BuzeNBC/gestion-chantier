@@ -781,20 +781,35 @@ function MenuiserieManagement() {
   );
 }
 
-// Formulaire d'export mensuel : choix du mois puis CSV (Excel) ou PDF.
-// Les lignes exportées = une par intervention, groupées par adresse.
+// Formulaire d'export mensuel : choix du mois, filtre par statut,
+// puis CSV (Excel) ou PDF. Une ligne par intervention, groupée par adresse.
 const ExportForm = ({ orders, onClose }) => {
   const now = new Date();
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const [month, setMonth] = useState(defaultMonth);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
+  // Statuts inclus dans l'export — tous cochés par défaut.
+  const [statusChecked, setStatusChecked] = useState({
+    todo: true,
+    in_progress: true,
+    completed: true,
+  });
+
+  const selectedStatuses = Object.entries(statusChecked)
+    .filter(([, on]) => on)
+    .map(([k]) => k);
+
+  const toggleStatus = (key) =>
+    setStatusChecked((s) => ({ ...s, [key]: !s[key] }));
+
+  const nothingChecked = selectedStatuses.length === 0;
 
   const runCsv = () => {
     try {
-      const n = exportMonthCsv(orders, month);
+      const n = exportMonthCsv(orders, month, selectedStatuses);
       setFeedback(n === 0
-        ? `Aucune intervention sur ${monthLabel(month)} — fichier vide généré.`
+        ? `Aucune intervention sur ${monthLabel(month)} avec ces critères — fichier vide généré.`
         : `${n} intervention${n > 1 ? 's' : ''} exportée${n > 1 ? 's' : ''} (CSV téléchargé).`);
     } catch (e) {
       console.error('Erreur export CSV :', e);
@@ -805,9 +820,9 @@ const ExportForm = ({ orders, onClose }) => {
   const runPdf = async () => {
     try {
       setBusy(true);
-      const n = await exportMonthPdf(orders, month);
+      const n = await exportMonthPdf(orders, month, selectedStatuses);
       setFeedback(n === 0
-        ? `Aucune intervention sur ${monthLabel(month)} — PDF vide généré.`
+        ? `Aucune intervention sur ${monthLabel(month)} avec ces critères — PDF vide généré.`
         : `${n} intervention${n > 1 ? 's' : ''} exportée${n > 1 ? 's' : ''} (PDF ouvert).`);
     } catch (e) {
       console.error('Erreur export PDF :', e);
@@ -833,17 +848,43 @@ const ExportForm = ({ orders, onClose }) => {
         </p>
       </div>
 
+      <div>
+        <label className="block text-sm font-medium mb-2">Statuts à inclure</label>
+        <div className="flex flex-wrap gap-4">
+          {[
+            ['todo', 'À faire'],
+            ['in_progress', 'En cours'],
+            ['completed', 'Terminé'],
+          ].map(([key, label]) => (
+            <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={statusChecked[key]}
+                onChange={() => toggleStatus(key)}
+                className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+              />
+              <span className={`px-2 py-0.5 rounded-full text-xs ${MENUISERIE_STATUS_STYLES[key] || ''}`}>
+                {label}
+              </span>
+            </label>
+          ))}
+        </div>
+        {nothingChecked && (
+          <p className="text-xs text-amber-600 mt-1">Coche au moins un statut.</p>
+        )}
+      </div>
+
       <div className="flex flex-col sm:flex-row gap-3">
         <button
           onClick={runCsv}
-          disabled={busy || !month}
+          disabled={busy || !month || nothingChecked}
           className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-green-700 text-white rounded-lg hover:bg-green-800 disabled:opacity-50"
         >
           <Download className="h-4 w-4" /> Excel / CSV
         </button>
         <button
           onClick={runPdf}
-          disabled={busy || !month}
+          disabled={busy || !month || nothingChecked}
           className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-900 disabled:opacity-50"
         >
           <FileText className="h-4 w-4" /> {busy ? 'Génération…' : 'PDF récapitulatif'}

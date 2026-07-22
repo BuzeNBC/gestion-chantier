@@ -23,11 +23,15 @@ export const interventionRefDate = (order, iv) => {
 
 // Aplatis les bons -> lignes d'intervention pour un mois donné.
 // `yearMonth` au format 'YYYY-MM' (valeur d'un <input type="month">).
+// `statuses` : liste des statuts à inclure ('todo'|'in_progress'|'completed').
+//   Si omis/vide, tous les statuts sont inclus.
 // Retourne les lignes triées par adresse puis par date.
-export const collectMonthRows = (orders, yearMonth) => {
+export const collectMonthRows = (orders, yearMonth, statuses = null) => {
+  const statusSet = statuses && statuses.length > 0 ? new Set(statuses) : null;
   const rows = [];
   for (const order of orders || []) {
     for (const iv of orderInterventions(order)) {
+      if (statusSet && !statusSet.has(iv.status || 'todo')) continue;
       const d = interventionRefDate(order, iv);
       if (!d) continue;
       const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -74,8 +78,8 @@ export const monthLabel = (yearMonth) => {
 // ============================================================== CSV ==========
 // Génère et télécharge un CSV. Séparateur ';' (convention Excel FR) et BOM
 // UTF-8 pour que les accents s'affichent correctement dans Excel.
-export const exportMonthCsv = (orders, yearMonth) => {
-  const rows = collectMonthRows(orders, yearMonth);
+export const exportMonthCsv = (orders, yearMonth, statuses = null) => {
+  const rows = collectMonthRows(orders, yearMonth, statuses);
   const esc = (v) => {
     const s = String(v ?? '');
     return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -121,8 +125,8 @@ export const exportMonthCsv = (orders, yearMonth) => {
 // ============================================================== PDF ==========
 // PDF récapitulatif du mois, groupé par adresse. Même charte que les autres
 // PDF du module (bleu foncé, A3 portrait, pied de page).
-export const exportMonthPdf = async (orders, yearMonth) => {
-  const rows = collectMonthRows(orders, yearMonth);
+export const exportMonthPdf = async (orders, yearMonth, statuses = null) => {
+  const rows = collectMonthRows(orders, yearMonth, statuses);
 
   const pdfDoc = await PDFDocument.create();
   const PAGE_WIDTH = 842;
