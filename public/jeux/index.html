@@ -56,16 +56,16 @@
   .hero h1{font-size:clamp(28px,8vw,38px); font-weight:800; margin:8px 0 2px; text-wrap:balance; line-height:1.1;}
   .hero p{margin:0; color:var(--encre-doux); font-weight:700; font-size:16px;}
 
-  .menu{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  .menu{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
   .carte-jeu{
     border:3px solid var(--encre); border-radius:22px;
-    padding:18px 10px 16px; text-align:center; cursor:pointer;
+    padding:14px 8px 13px; text-align:center; cursor:pointer;
     color:#fff; font-family:'Baloo 2',sans-serif;
-    display:flex; flex-direction:column; align-items:center; gap:6px;
+    display:flex; flex-direction:column; align-items:center; gap:4px;
     transition:transform .08s;
   }
-  .carte-jeu .emo{font-size:44px; line-height:1;}
-  .carte-jeu .nom{font-size:18px; font-weight:800; line-height:1.15;}
+  .carte-jeu .emo{font-size:38px; line-height:1;}
+  .carte-jeu .nom{font-size:17px; font-weight:800; line-height:1.15;}
   .carte-jeu:active{transform:translateY(4px);}
   .carte-jeu.c1{background:var(--corail); box-shadow:0 6px 0 var(--corail-fonce);}
   .carte-jeu.c2{background:var(--violet); box-shadow:0 6px 0 var(--violet-fonce);}
@@ -82,7 +82,15 @@
     padding:20px 16px; box-shadow:0 6px 0 var(--ombre);
     text-align:center; flex:1; display:flex; flex-direction:column;
   }
-  .consigne{font-family:'Baloo 2',sans-serif; font-weight:800; font-size:20px; margin:0 0 10px; text-wrap:balance;}
+  .ligne-consigne{display:flex; align-items:center; justify-content:center; gap:10px; margin:0 0 10px;}
+  .consigne{font-family:'Baloo 2',sans-serif; font-weight:800; font-size:20px; margin:0; text-wrap:balance;}
+  .btn-son{
+    flex:none; width:46px; height:46px; border-radius:50%;
+    background:var(--soleil); border:3px solid var(--encre);
+    font-size:20px; cursor:pointer; box-shadow:0 4px 0 var(--soleil-fonce);
+    transition:transform .08s;
+  }
+  .btn-son:active{transform:translateY(3px); box-shadow:0 1px 0 var(--soleil-fonce);}
   .grand-texte{font-family:'Baloo 2',sans-serif; font-weight:800; font-size:clamp(40px,13vw,58px); margin:12px 0; line-height:1; font-variant-numeric:tabular-nums;}
   .zone-emojis{font-size:34px; line-height:1.5; letter-spacing:4px; margin:10px 0 16px; word-break:break-all;}
 
@@ -136,6 +144,34 @@
   .memo-carte.vue{background:var(--carte); color:inherit;  box-shadow:0 4px 0 var(--ombre);}
   .memo-carte.trouvee{background:var(--feuille); box-shadow:0 4px 0 var(--feuille-fonce); transform:scale(.94); cursor:default;}
 
+  /* formes et couleurs */
+  .formes-grille{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:auto 0; padding:10px 0;}
+  .btn-forme{
+    background:var(--ciel-2); border:3px solid var(--encre); border-radius:18px;
+    padding:12px; cursor:pointer; box-shadow:0 5px 0 var(--ombre);
+    display:flex; align-items:center; justify-content:center;
+    transition:transform .08s;
+  }
+  .btn-forme svg{width:100%; height:auto; max-width:74px; display:block;}
+  .btn-forme:active{transform:translateY(4px); box-shadow:0 1px 0 var(--ombre);}
+  .btn-forme.bon{background:var(--feuille); box-shadow:0 5px 0 var(--feuille-fonce);}
+  .btn-forme.faux{background:var(--corail); box-shadow:0 5px 0 var(--corail-fonce); animation:secoue .35s;}
+
+  /* écoute bien */
+  .ecoute-grille{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin:auto 0; padding:10px 0;}
+  .btn-image{
+    background:var(--ciel-2); border:3px solid var(--encre); border-radius:20px;
+    font-size:56px; padding:20px 8px; cursor:pointer; box-shadow:0 5px 0 var(--ombre);
+    transition:transform .08s; line-height:1;
+  }
+  .btn-image:active{transform:translateY(4px); box-shadow:0 1px 0 var(--ombre);}
+  .btn-image.bon{background:var(--feuille); box-shadow:0 5px 0 var(--feuille-fonce);}
+  .btn-image.faux{background:var(--corail); box-shadow:0 5px 0 var(--corail-fonce); animation:secoue .35s;}
+
+  /* horloge */
+  .horloge-zone{display:flex; justify-content:center; margin:6px 0 14px;}
+  .horloge-zone svg{width:min(58vw,230px); height:auto;}
+
   /* bravo / progression */
   .progress{display:flex; justify-content:center; gap:6px; margin-bottom:12px;}
   .pt{width:14px; height:14px; border-radius:50%; border:2px solid var(--encre); background:var(--ciel-2);}
@@ -179,9 +215,13 @@
     </div>
     <div class="menu">
       <div class="carte-jeu c1" data-jeu="calcul"><span class="emo">🧮</span><span class="nom">Calcul magique</span></div>
-      <div class="carte-jeu c2" data-jeu="mots"><span class="emo">🔤</span><span class="nom">Mots mélangés</span></div>
-      <div class="carte-jeu c3" data-jeu="memo"><span class="emo">🐾</span><span class="nom">Mémo des animaux</span></div>
+      <div class="carte-jeu c2" data-jeu="ecoute"><span class="emo">👂</span><span class="nom">Écoute bien</span></div>
+      <div class="carte-jeu c3" data-jeu="formes"><span class="emo">🎨</span><span class="nom">Formes et couleurs</span></div>
       <div class="carte-jeu c4" data-jeu="compte"><span class="emo">🔢</span><span class="nom">Compte avec moi</span></div>
+      <div class="carte-jeu c4" data-jeu="mots"><span class="emo">🔤</span><span class="nom">Mots mélangés</span></div>
+      <div class="carte-jeu c3" data-jeu="horloge"><span class="emo">🕐</span><span class="nom">L'horloge</span></div>
+      <div class="carte-jeu c2" data-jeu="memo"><span class="emo">🐾</span><span class="nom">Mémo des animaux</span></div>
+      <div class="carte-jeu c1" data-jeu="doubles"><span class="emo">🎲</span><span class="nom">Les doubles</span></div>
     </div>
   </div>
 
@@ -205,6 +245,47 @@
     $("#nbEtoiles").textContent = etoiles;
   }
   $("#nbEtoiles").textContent = etoiles;
+
+  /* ---------- voix (consignes lues à voix haute) ---------- */
+  var voixFr = null;
+  function chercheVoix(){
+    try{
+      var toutes = speechSynthesis.getVoices();
+      var fr = toutes.filter(function(v){ return v.lang && v.lang.indexOf("fr") === 0; });
+      /* on préfère une voix locale fr-FR si elle existe */
+      voixFr = fr.filter(function(v){ return v.lang === "fr-FR" && v.localService; })[0] ||
+               fr.filter(function(v){ return v.lang === "fr-FR"; })[0] || fr[0] || null;
+    }catch(e){}
+  }
+  if("speechSynthesis" in window){
+    chercheVoix();
+    speechSynthesis.addEventListener("voiceschanged", chercheVoix);
+  }
+  var derniereConsigne = "";
+  function parle(texte){
+    if(!("speechSynthesis" in window) || !texte) return;
+    try{
+      speechSynthesis.cancel();
+      var u = new SpeechSynthesisUtterance(texte);
+      u.lang = "fr-FR";
+      if(voixFr) u.voice = voixFr;
+      u.rate = 0.9; u.pitch = 1.1;
+      speechSynthesis.speak(u);
+    }catch(e){}
+  }
+  /* petit délai pour laisser le son de clic se jouer avant la voix */
+  function parleConsigne(texte){
+    derniereConsigne = texte;
+    setTimeout(function(){ parle(texte); }, 250);
+  }
+  function enteteConsigne(texteEcrit){
+    return '<div class="ligne-consigne"><h2 class="consigne">'+texteEcrit+'</h2>'+
+           '<button class="btn-son" id="btnSon" aria-label="Réécouter la consigne">🔊</button></div>';
+  }
+  function brancheSon(){
+    var b = $("#btnSon");
+    if(b) b.addEventListener("click", function(){ parle(derniereConsigne); });
+  }
 
   /* ---------- sons (Web Audio, créé au premier toucher) ---------- */
   var ctxAudio = null;
@@ -263,6 +344,7 @@
   var jeuActuel = null, tour = 0, verrou = false;
 
   function montreAccueil(){
+    try{ speechSynthesis.cancel(); }catch(e){}
     $("#ecran-accueil").classList.remove("cache");
     $("#ecran-jeu").classList.add("cache");
     $("#btnRetour").classList.add("cache");
@@ -285,10 +367,8 @@
     verrou = false;
     majProgress();
     if(tour >= TOURS){ return ecranBravo(); }
-    if(jeuActuel === "calcul") jeuCalcul();
-    else if(jeuActuel === "mots") jeuMots();
-    else if(jeuActuel === "memo") jeuMemo();
-    else if(jeuActuel === "compte") jeuCompte();
+    JEUX[jeuActuel]();
+    brancheSon();
   }
   function reussite(pts){
     majEtoiles(pts); confettis(); sonBon();
@@ -297,6 +377,7 @@
   }
   function ecranBravo(){
     sonVictoire(); confettis();
+    parleConsigne("Bravo champion ! Tu as gagné plein d'étoiles !");
     $("#progress").innerHTML = "";
     $("#contenu-jeu").innerHTML =
       '<div class="bravo"><span class="big">🏆</span>'+
@@ -335,11 +416,11 @@
     };
   }
 
-  /* ---------- jeu 1 : calcul ---------- */
+  /* ---------- jeu : calcul ---------- */
   function jeuCalcul(){
-    var addition = Math.random() < 0.6, a, b, bonne, signe;
-    if(addition){ a = 1+(Math.random()*10|0); b = 1+(Math.random()*10|0); bonne = a+b; signe="+"; }
-    else{ a = 5+(Math.random()*15|0); b = 1+(Math.random()*Math.min(a,9)|0); bonne = a-b; signe="−"; }
+    var addition = Math.random() < 0.6, a, b, bonne, signe, mot;
+    if(addition){ a = 1+(Math.random()*10|0); b = 1+(Math.random()*10|0); bonne = a+b; signe="+"; mot="plus"; }
+    else{ a = 5+(Math.random()*15|0); b = 1+(Math.random()*Math.min(a,9)|0); bonne = a-b; signe="−"; mot="moins"; }
     var choix = [bonne];
     while(choix.length < 3){
       var f = bonne + ((Math.random()*7|0) - 3);
@@ -348,30 +429,52 @@
     choix = melange(choix);
     var r = boutonsReponses(bonne, choix, 2);
     $("#contenu-jeu").innerHTML =
-      '<h2 class="consigne">Combien ça fait ? 🧮</h2>'+
+      enteteConsigne('Combien ça fait ? 🧮')+
       '<div class="grand-texte">'+a+' '+signe+' '+b+' = ?</div>'+ r.html;
     r.brancher();
+    parleConsigne("Combien font "+a+" "+mot+" "+b+" ?");
   }
 
-  /* ---------- jeu 2 : mots mélangés ---------- */
+  /* ---------- jeu : les doubles ---------- */
+  function jeuDoubles(){
+    var n = 1+(Math.random()*10|0), bonne = n*2;
+    var choix = [bonne];
+    while(choix.length < 3){
+      var f = bonne + ((Math.random()*5|0) - 2);
+      if(f >= 2 && choix.indexOf(f) === -1) choix.push(f);
+    }
+    choix = melange(choix);
+    var r = boutonsReponses(bonne, choix, 2);
+    $("#contenu-jeu").innerHTML =
+      enteteConsigne('Le double, c\'est 2 fois pareil ! 🎲')+
+      '<div class="grand-texte">'+n+' + '+n+' = ?</div>'+ r.html;
+    r.brancher();
+    parleConsigne("Quel est le double de "+n+" ? "+n+" plus "+n+", ça fait combien ?");
+  }
+
+  /* ---------- jeu : mots mélangés ---------- */
   var MOTS = [
-    ["CHAT","🐱"],["CHIEN","🐶"],["VACHE","🐮"],["LION","🦁"],["POULE","🐔"],
-    ["LAPIN","🐰"],["SOURIS","🐭"],["POISSON","🐟"],["MAISON","🏠"],["POMME","🍎"],
-    ["BANANE","🍌"],["FRAISE","🍓"],["GATEAU","🍰"],["VELO","🚲"],["AVION","✈️"],
-    ["BATEAU","⛵"],["SOLEIL","☀️"],["LUNE","🌙"],["FLEUR","🌸"],["ARBRE","🌳"],
-    ["ROBOT","🤖"],["FUSEE","🚀"],["BALLON","⚽"],["ECOLE","🏫"]
+    ["CHAT","🐱","le chat"],["CHIEN","🐶","le chien"],["VACHE","🐮","la vache"],
+    ["LION","🦁","le lion"],["POULE","🐔","la poule"],["LAPIN","🐰","le lapin"],
+    ["SOURIS","🐭","la souris"],["POISSON","🐟","le poisson"],["MAISON","🏠","la maison"],
+    ["POMME","🍎","la pomme"],["BANANE","🍌","la banane"],["FRAISE","🍓","la fraise"],
+    ["GATEAU","🍰","le gâteau"],["VELO","🚲","le vélo"],["AVION","✈️","l'avion"],
+    ["BATEAU","⛵","le bateau"],["SOLEIL","☀️","le soleil"],["LUNE","🌙","la lune"],
+    ["FLEUR","🌸","la fleur"],["ARBRE","🌳","l'arbre"],["ROBOT","🤖","le robot"],
+    ["FUSEE","🚀","la fusée"],["BALLON","⚽","le ballon"],["ECOLE","🏫","l'école"]
   ];
   var motsRestants = [];
   function jeuMots(){
     if(!motsRestants.length) motsRestants = melange(MOTS);
-    var duo = motsRestants.pop(), mot = duo[0], emo = duo[1];
+    var duo = motsRestants.pop(), mot = duo[0], emo = duo[1], dit = duo[2];
     var lettres = melange(mot.split(""));
-    var html = '<h2 class="consigne">Écris le mot ! '+emo+'</h2><div class="slots">';
+    var html = enteteConsigne('Écris le mot ! '+emo)+'<div class="slots">';
     for(var i=0;i<mot.length;i++) html += '<div class="slot" data-i="'+i+'"></div>';
     html += '</div><div class="lettres">';
     lettres.forEach(function(l, i){ html += '<button class="btn-lettre" data-l="'+l+'" data-i="'+i+'">'+l+'</button>'; });
     html += '</div><div><button class="btn-efface" id="btnEfface">🧽 Effacer</button></div>';
     $("#contenu-jeu").innerHTML = html;
+    parleConsigne("Écris le mot : "+dit+" !");
 
     var saisie = [];
     function rafraichit(){
@@ -408,15 +511,144 @@
     });
   }
 
-  /* ---------- jeu 3 : mémo ---------- */
+  /* ---------- jeu : écoute bien (pour les non-lecteurs) ---------- */
+  var ecouteRestants = [];
+  function jeuEcoute(){
+    if(ecouteRestants.length < 4) ecouteRestants = melange(MOTS);
+    var options = ecouteRestants.splice(0, 4);
+    var cible = options[(Math.random()*4|0)];
+    var html = enteteConsigne('Écoute et touche le bon dessin ! 👂')+'<div class="ecoute-grille">';
+    options.forEach(function(o){ html += '<button class="btn-image" data-m="'+o[0]+'">'+o[1]+'</button>'; });
+    html += '</div>';
+    $("#contenu-jeu").innerHTML = html;
+    parleConsigne("Touche : "+cible[2]+" !");
+    document.querySelectorAll(".btn-image").forEach(function(b){
+      b.addEventListener("click", function(){
+        if(verrou) return;
+        if(b.dataset.m === cible[0]){
+          verrou = true; b.classList.add("bon");
+          reussite(2);
+        }else{
+          b.classList.add("faux"); sonFaux();
+          setTimeout(function(){
+            b.classList.remove("faux");
+            parle("Essaie encore ! Touche : "+cible[2]+" !");
+          }, 450);
+        }
+      });
+    });
+  }
+
+  /* ---------- jeu : formes et couleurs (pour les non-lecteurs) ---------- */
+  var FORMES = [
+    ["rond",     false, function(c){ return '<circle cx="50" cy="50" r="38" fill="'+c+'"/>'; }],
+    ["carré",    false, function(c){ return '<rect x="14" y="14" width="72" height="72" rx="10" fill="'+c+'"/>'; }],
+    ["triangle", false, function(c){ return '<polygon points="50,12 90,84 10,84" fill="'+c+'"/>'; }],
+    ["étoile",   true,  function(c){ return '<polygon points="50,8 61,38 93,38 67,57 77,89 50,70 23,89 33,57 7,38 39,38" fill="'+c+'"/>'; }],
+    ["cœur",     false, function(c){ return '<path d="M50 88 C20 64 8 46 14 30 C19 17 36 14 50 30 C64 14 81 17 86 30 C92 46 80 64 50 88 Z" fill="'+c+'"/>'; }]
+  ];
+  var COULEURS = [
+    ["rouge","rouge","#E53935"],["bleu","bleue","#1E88E5"],["vert","verte","#43A047"],
+    ["jaune","jaune","#FDD835"],["violet","violette","#8E24AA"],["orange","orange","#FB8C00"]
+  ];
+  function jeuFormes(){
+    /* 6 combinaisons forme+couleur toutes différentes */
+    var combos = [], deja = {};
+    while(combos.length < 6){
+      var f = FORMES[(Math.random()*FORMES.length)|0];
+      var c = COULEURS[(Math.random()*COULEURS.length)|0];
+      var cle = f[0]+"-"+c[0];
+      /* on évite aussi deux fois la même forme OU une couleur trop répétée */
+      if(deja[cle]) continue;
+      deja[cle] = true;
+      combos.push([f, c]);
+    }
+    var cible = combos[(Math.random()*combos.length)|0];
+    var nomForme = cible[0][0], feminin = cible[0][1];
+    var article = (nomForme === "étoile") ? "l'" : (feminin ? "la " : "le ");
+    var nomCouleur = feminin ? cible[1][1] : cible[1][0];
+    var phrase = "Touche "+article+nomForme+" "+nomCouleur+" !";
+
+    var html = enteteConsigne('Écoute et touche la bonne forme ! 🎨')+'<div class="formes-grille">';
+    combos.forEach(function(co, i){
+      html += '<button class="btn-forme" data-i="'+i+'">'+
+              '<svg viewBox="0 0 100 100" aria-hidden="true"><g stroke="#22304A" stroke-width="5" stroke-linejoin="round">'+
+              co[0][2](co[1][2])+'</g></svg></button>';
+    });
+    html += '</div>';
+    $("#contenu-jeu").innerHTML = html;
+    parleConsigne(phrase);
+    document.querySelectorAll(".btn-forme").forEach(function(b){
+      b.addEventListener("click", function(){
+        if(verrou) return;
+        var co = combos[parseInt(b.dataset.i, 10)];
+        if(co === cible){
+          verrou = true; b.classList.add("bon");
+          reussite(2);
+        }else{
+          b.classList.add("faux"); sonFaux();
+          setTimeout(function(){
+            b.classList.remove("faux");
+            parle("Essaie encore ! "+phrase);
+          }, 450);
+        }
+      });
+    });
+  }
+
+  /* ---------- jeu : l'horloge ---------- */
+  function jeuHorloge(){
+    var heure = 1+(Math.random()*12|0);
+    var choix = [heure];
+    while(choix.length < 3){
+      var f = 1+(Math.random()*12|0);
+      if(choix.indexOf(f) === -1) choix.push(f);
+    }
+    choix = melange(choix);
+    var angle = (heure % 12) * 30;
+    var chiffres = "";
+    for(var i=1;i<=12;i++){
+      var a = (i*30-90)*Math.PI/180;
+      chiffres += '<text x="'+(100+Math.cos(a)*70).toFixed(1)+'" y="'+(100+Math.sin(a)*70+6).toFixed(1)+'" text-anchor="middle" font-size="17" font-weight="800" font-family="Baloo 2, sans-serif" fill="#22304A">'+i+'</text>';
+    }
+    /* boutons "3 h" mais valeur = nombre */
+    var htmlRep = '<div class="reponses">';
+    choix.forEach(function(h){ htmlRep += '<button class="btn-rep" data-v="'+h+'">'+h+' h</button>'; });
+    htmlRep += '</div>';
+    $("#contenu-jeu").innerHTML =
+      enteteConsigne('Quelle heure est-il ? 🕐')+
+      '<div class="horloge-zone"><svg viewBox="0 0 200 200" aria-hidden="true">'+
+      '<circle cx="100" cy="100" r="92" fill="#FFFFFF" stroke="#22304A" stroke-width="6"/>'+
+      chiffres+
+      '<line x1="100" y1="100" x2="100" y2="38" stroke="#5A6B8C" stroke-width="6" stroke-linecap="round"/>'+
+      '<line x1="100" y1="100" x2="'+(100+Math.sin(angle*Math.PI/180)*42).toFixed(1)+'" y2="'+(100-Math.cos(angle*Math.PI/180)*42).toFixed(1)+'" stroke="#FF6B57" stroke-width="8" stroke-linecap="round"/>'+
+      '<circle cx="100" cy="100" r="7" fill="#22304A"/>'+
+      '</svg></div>'+ htmlRep;
+    parleConsigne("Regarde la petite aiguille rouge. Quelle heure est-il ?");
+    document.querySelectorAll(".btn-rep").forEach(function(b){
+      b.addEventListener("click", function(){
+        if(verrou) return;
+        if(parseInt(b.dataset.v, 10) === heure){
+          verrou = true; b.classList.add("bon");
+          reussite(3);
+        }else{
+          b.classList.add("faux"); sonFaux();
+          setTimeout(function(){ b.classList.remove("faux"); }, 400);
+        }
+      });
+    });
+  }
+
+  /* ---------- jeu : mémo ---------- */
   function jeuMemo(){
     /* le mémo est une manche complète : on le joue une fois, il vaut 5 tours */
     var animaux = melange(["🐱","🐶","🦁","🐸","🐼","🦊","🐷","🐵","🐨","🦉"]).slice(0,6);
     var cartes = melange(animaux.concat(animaux));
-    var html = '<h2 class="consigne">Trouve les paires ! 🐾</h2><div class="memo-grille">';
+    var html = enteteConsigne('Trouve les paires ! 🐾')+'<div class="memo-grille">';
     cartes.forEach(function(e, i){ html += '<div class="memo-carte" data-e="'+e+'" data-i="'+i+'"><span class="dos">❓</span></div>'; });
     html += '</div>';
     $("#contenu-jeu").innerHTML = html;
+    parleConsigne("Retourne les cartes et trouve les paires d'animaux !");
 
     var ouverte = null, trouvees = 0, gel = false;
     document.querySelectorAll(".memo-carte").forEach(function(c){
@@ -448,10 +680,11 @@
     });
   }
 
-  /* ---------- jeu 4 : compter ---------- */
+  /* ---------- jeu : compter ---------- */
   function jeuCompte(){
-    var objets = ["⭐","🍎","🎈","🐞","🌸","⚽","🦋","🍪"];
-    var emo = objets[(Math.random()*objets.length)|0];
+    var objets = [["⭐","les étoiles"],["🍎","les pommes"],["🎈","les ballons"],["🐞","les coccinelles"],
+                  ["🌸","les fleurs"],["⚽","les ballons"],["🦋","les papillons"],["🍪","les gâteaux"]];
+    var duo = objets[(Math.random()*objets.length)|0], emo = duo[0];
     var bonne = 3 + (Math.random()*10|0); /* 3 à 12 */
     var choix = [bonne];
     while(choix.length < 3){
@@ -463,12 +696,17 @@
     var ligne = "";
     for(var i=0;i<bonne;i++) ligne += emo;
     $("#contenu-jeu").innerHTML =
-      '<h2 class="consigne">Combien y en a-t-il ? 👀</h2>'+
+      enteteConsigne('Combien y en a-t-il ? 👀')+
       '<div class="zone-emojis">'+ligne+'</div>'+ r.html;
     r.brancher();
+    parleConsigne("Compte "+duo[1]+" ! Combien y en a-t-il ?");
   }
 
   /* ---------- branchements ---------- */
+  var JEUX = {
+    calcul: jeuCalcul, mots: jeuMots, memo: jeuMemo, compte: jeuCompte,
+    formes: jeuFormes, ecoute: jeuEcoute, horloge: jeuHorloge, doubles: jeuDoubles
+  };
   document.querySelectorAll(".carte-jeu").forEach(function(c){
     c.addEventListener("click", function(){ bip([600], 0.08, "sine"); lanceJeu(c.dataset.jeu); });
   });
