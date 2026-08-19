@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Les Jeux de Petit Génie</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Nunito:wght@600;700;800&display=swap">
+<style>
+  :root{
+    --ciel:#EAF6FF; --ciel-2:#D8EEFF;
+    --encre:#22304A; --encre-doux:#5A6B8C;
+    --corail:#FF6B57; --corail-fonce:#D94A38;
+    --soleil:#FFC93C; --soleil-fonce:#D9A41E;
+    --feuille:#35C46F; --feuille-fonce:#1F9A50;
+    --violet:#7C5CE0; --violet-fonce:#5B3EC2;
+    --carte:#FFFFFF;
+    --ombre:#B9D4EA;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0;}
+  body{
+    background:var(--ciel);
+    color:var(--encre);
+    font-family:'Nunito',system-ui,sans-serif;
+    min-height:100dvh;
+    overscroll-behavior:none;
+    -webkit-user-select:none; user-select:none;
+  }
+  h1,h2,h3,.baloo{font-family:'Baloo 2','Nunito',system-ui,sans-serif;}
+
+  #app{max-width:520px; margin:0 auto; padding:16px 16px 32px; min-height:100dvh; display:flex; flex-direction:column;}
+
+  /* ---------- barre du haut ---------- */
+  .topbar{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px;}
+  .stars-pill{
+    display:flex; align-items:center; gap:6px;
+    background:var(--carte); border:3px solid var(--encre);
+    border-radius:999px; padding:6px 14px;
+    font-family:'Baloo 2',sans-serif; font-weight:800; font-size:20px;
+    box-shadow:0 4px 0 var(--ombre);
+    font-variant-numeric:tabular-nums;
+  }
+  .btn-retour{
+    background:var(--carte); border:3px solid var(--encre); color:var(--encre);
+    border-radius:999px; padding:6px 16px;
+    font-family:'Baloo 2',sans-serif; font-weight:700; font-size:17px;
+    box-shadow:0 4px 0 var(--ombre); cursor:pointer;
+  }
+  .btn-retour:active{transform:translateY(3px); box-shadow:0 1px 0 var(--ombre);}
+
+  /* ---------- accueil ---------- */
+  .hero{text-align:center; margin:4px 0 18px;}
+  .hero .mascotte{font-size:56px; line-height:1; display:block; animation:flotte 3s ease-in-out infinite;}
+  @keyframes flotte{0%,100%{transform:translateY(0) rotate(-4deg)} 50%{transform:translateY(-8px) rotate(4deg)}}
+  .hero h1{font-size:clamp(28px,8vw,38px); font-weight:800; margin:8px 0 2px; text-wrap:balance; line-height:1.1;}
+  .hero p{margin:0; color:var(--encre-doux); font-weight:700; font-size:16px;}
+
+  .menu{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  .carte-jeu{
+    border:3px solid var(--encre); border-radius:22px;
+    padding:18px 10px 16px; text-align:center; cursor:pointer;
+    color:#fff; font-family:'Baloo 2',sans-serif;
+    display:flex; flex-direction:column; align-items:center; gap:6px;
+    transition:transform .08s;
+  }
+  .carte-jeu .emo{font-size:44px; line-height:1;}
+  .carte-jeu .nom{font-size:18px; font-weight:800; line-height:1.15;}
+  .carte-jeu:active{transform:translateY(4px);}
+  .carte-jeu.c1{background:var(--corail); box-shadow:0 6px 0 var(--corail-fonce);}
+  .carte-jeu.c2{background:var(--violet); box-shadow:0 6px 0 var(--violet-fonce);}
+  .carte-jeu.c3{background:var(--feuille); box-shadow:0 6px 0 var(--feuille-fonce);}
+  .carte-jeu.c4{background:var(--soleil); box-shadow:0 6px 0 var(--soleil-fonce); color:var(--encre);}
+  .carte-jeu:active.c1{box-shadow:0 2px 0 var(--corail-fonce);}
+  .carte-jeu:active.c2{box-shadow:0 2px 0 var(--violet-fonce);}
+  .carte-jeu:active.c3{box-shadow:0 2px 0 var(--feuille-fonce);}
+  .carte-jeu:active.c4{box-shadow:0 2px 0 var(--soleil-fonce);}
+
+  /* ---------- écran de jeu ---------- */
+  .panneau{
+    background:var(--carte); border:3px solid var(--encre); border-radius:24px;
+    padding:20px 16px; box-shadow:0 6px 0 var(--ombre);
+    text-align:center; flex:1; display:flex; flex-direction:column;
+  }
+  .consigne{font-family:'Baloo 2',sans-serif; font-weight:800; font-size:20px; margin:0 0 10px; text-wrap:balance;}
+  .grand-texte{font-family:'Baloo 2',sans-serif; font-weight:800; font-size:clamp(40px,13vw,58px); margin:12px 0; line-height:1; font-variant-numeric:tabular-nums;}
+  .zone-emojis{font-size:34px; line-height:1.5; letter-spacing:4px; margin:10px 0 16px; word-break:break-all;}
+
+  .reponses{display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-top:auto;}
+  .btn-rep{
+    background:var(--ciel-2); border:3px solid var(--encre); border-radius:18px;
+    font-family:'Baloo 2',sans-serif; font-weight:800; font-size:30px; color:var(--encre);
+    padding:16px 4px; cursor:pointer; box-shadow:0 5px 0 var(--ombre);
+    transition:transform .08s; font-variant-numeric:tabular-nums;
+  }
+  .btn-rep:active{transform:translateY(4px); box-shadow:0 1px 0 var(--ombre);}
+  .btn-rep.bon{background:var(--feuille); color:#fff; box-shadow:0 5px 0 var(--feuille-fonce);}
+  .btn-rep.faux{background:var(--corail); color:#fff; box-shadow:0 5px 0 var(--corail-fonce); animation:secoue .35s;}
+  @keyframes secoue{0%,100%{transform:translateX(0)} 25%{transform:translateX(-7px)} 75%{transform:translateX(7px)}}
+
+  /* mots mélangés */
+  .slots{display:flex; justify-content:center; gap:8px; margin:14px 0; flex-wrap:wrap;}
+  .slot{
+    width:46px; height:54px; border:3px dashed var(--encre-doux); border-radius:12px;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Baloo 2',sans-serif; font-weight:800; font-size:28px;
+    background:var(--ciel);
+  }
+  .slot.rempli{border-style:solid; border-color:var(--encre); background:var(--soleil);}
+  .lettres{display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin-top:auto;}
+  .btn-lettre{
+    width:56px; height:60px; background:var(--violet); color:#fff;
+    border:3px solid var(--encre); border-radius:14px;
+    font-family:'Baloo 2',sans-serif; font-weight:800; font-size:28px;
+    box-shadow:0 5px 0 var(--violet-fonce); cursor:pointer; transition:transform .08s;
+  }
+  .btn-lettre:active{transform:translateY(4px); box-shadow:0 1px 0 var(--violet-fonce);}
+  .btn-lettre:disabled{opacity:.25; box-shadow:none; transform:translateY(4px);}
+  .btn-efface{
+    margin-top:14px; background:var(--carte); border:3px solid var(--encre); color:var(--encre);
+    border-radius:999px; padding:8px 20px; font-family:'Baloo 2',sans-serif; font-weight:700; font-size:16px;
+    box-shadow:0 4px 0 var(--ombre); cursor:pointer;
+  }
+  .btn-efface:active{transform:translateY(3px); box-shadow:0 1px 0 var(--ombre);}
+
+  /* mémo */
+  .memo-grille{display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:8px;}
+  .memo-carte{
+    aspect-ratio:3/3.4; border:3px solid var(--encre); border-radius:16px;
+    background:var(--violet); box-shadow:0 4px 0 var(--violet-fonce);
+    display:flex; align-items:center; justify-content:center;
+    font-size:34px; cursor:pointer; color:#fff;
+    transition:transform .15s;
+  }
+  .memo-carte .dos{font-size:26px;}
+  .memo-carte.vue{background:var(--carte); color:inherit;  box-shadow:0 4px 0 var(--ombre);}
+  .memo-carte.trouvee{background:var(--feuille); box-shadow:0 4px 0 var(--feuille-fonce); transform:scale(.94); cursor:default;}
+
+  /* bravo / progression */
+  .progress{display:flex; justify-content:center; gap:6px; margin-bottom:12px;}
+  .pt{width:14px; height:14px; border-radius:50%; border:2px solid var(--encre); background:var(--ciel-2);}
+  .pt.ok{background:var(--soleil);}
+  .bravo{
+    font-family:'Baloo 2',sans-serif; text-align:center; margin:auto 0; padding:20px 0;
+  }
+  .bravo .big{font-size:64px; display:block; animation:pop .5s;}
+  @keyframes pop{0%{transform:scale(0)} 70%{transform:scale(1.25)} 100%{transform:scale(1)}}
+  .bravo h2{font-size:30px; margin:10px 0 4px;}
+  .bravo p{font-family:'Nunito',sans-serif; font-weight:700; color:var(--encre-doux); margin:0 0 20px;}
+  .btn-grand{
+    background:var(--feuille); color:#fff; border:3px solid var(--encre); border-radius:999px;
+    padding:14px 30px; font-family:'Baloo 2',sans-serif; font-weight:800; font-size:20px;
+    box-shadow:0 6px 0 var(--feuille-fonce); cursor:pointer;
+  }
+  .btn-grand:active{transform:translateY(4px); box-shadow:0 2px 0 var(--feuille-fonce);}
+
+  #confettis{position:fixed; inset:0; pointer-events:none; z-index:50;}
+  .cache{display:none !important;}
+  @media (prefers-reduced-motion: reduce){
+    *{animation:none !important; transition:none !important;}
+  }
+</style>
+</head>
+<body>
+<canvas id="confettis"></canvas>
+<div id="app">
+  <div class="topbar">
+    <button class="btn-retour cache" id="btnRetour">⬅ Menu</button>
+    <span></span>
+    <div class="stars-pill">⭐ <span id="nbEtoiles">0</span></div>
+  </div>
+
+  <!-- ACCUEIL -->
+  <div id="ecran-accueil">
+    <div class="hero">
+      <span class="mascotte">🦊</span>
+      <h1>Les Jeux de Petit Génie</h1>
+      <p>Joue, apprends et gagne des étoiles !</p>
+    </div>
+    <div class="menu">
+      <div class="carte-jeu c1" data-jeu="calcul"><span class="emo">🧮</span><span class="nom">Calcul magique</span></div>
+      <div class="carte-jeu c2" data-jeu="mots"><span class="emo">🔤</span><span class="nom">Mots mélangés</span></div>
+      <div class="carte-jeu c3" data-jeu="memo"><span class="emo">🐾</span><span class="nom">Mémo des animaux</span></div>
+      <div class="carte-jeu c4" data-jeu="compte"><span class="emo">🔢</span><span class="nom">Compte avec moi</span></div>
+    </div>
+  </div>
+
+  <!-- JEU -->
+  <div id="ecran-jeu" class="panneau cache">
+    <div class="progress" id="progress"></div>
+    <div id="contenu-jeu" style="flex:1; display:flex; flex-direction:column;"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var $ = function(s){ return document.querySelector(s); };
+
+  /* ---------- étoiles ---------- */
+  var etoiles = parseInt(localStorage.getItem("pg-etoiles") || "0", 10);
+  function majEtoiles(n){
+    etoiles += n;
+    localStorage.setItem("pg-etoiles", String(etoiles));
+    $("#nbEtoiles").textContent = etoiles;
+  }
+  $("#nbEtoiles").textContent = etoiles;
+
+  /* ---------- sons (Web Audio, créé au premier toucher) ---------- */
+  var ctxAudio = null;
+  function bip(freqs, duree, type){
+    try{
+      if(!ctxAudio) ctxAudio = new (window.AudioContext || window.webkitAudioContext)();
+      freqs.forEach(function(f, i){
+        var o = ctxAudio.createOscillator(), g = ctxAudio.createGain();
+        o.type = type || "sine"; o.frequency.value = f;
+        g.gain.setValueAtTime(0.001, ctxAudio.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.12, ctxAudio.currentTime + 0.01 + i*0.09);
+        g.gain.exponentialRampToValueAtTime(0.001, ctxAudio.currentTime + (duree||0.25) + i*0.09);
+        o.connect(g); g.connect(ctxAudio.destination);
+        o.start(ctxAudio.currentTime + i*0.09);
+        o.stop(ctxAudio.currentTime + (duree||0.25) + i*0.09 + 0.05);
+      });
+    }catch(e){}
+  }
+  function sonBon(){ bip([523, 659, 784], 0.2, "triangle"); }
+  function sonFaux(){ bip([196], 0.3, "square"); }
+  function sonVictoire(){ bip([523, 659, 784, 1047], 0.3, "triangle"); }
+
+  /* ---------- confettis ---------- */
+  var canvas = $("#confettis"), cctx = canvas.getContext("2d"), particules = [], animConf = null;
+  function tailleCanvas(){ canvas.width = innerWidth; canvas.height = innerHeight; }
+  addEventListener("resize", tailleCanvas); tailleCanvas();
+  var reduitMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function confettis(){
+    if(reduitMotion) return;
+    var couleurs = ["#FF6B57","#FFC93C","#35C46F","#7C5CE0","#4FB3FF"];
+    for(var i=0;i<80;i++){
+      particules.push({
+        x: Math.random()*canvas.width, y: -20 - Math.random()*canvas.height*0.3,
+        vy: 2+Math.random()*3, vx: (Math.random()-0.5)*2,
+        t: Math.random()*Math.PI, taille: 6+Math.random()*6,
+        c: couleurs[(Math.random()*couleurs.length)|0]
+      });
+    }
+    if(!animConf) boucleConf();
+  }
+  function boucleConf(){
+    cctx.clearRect(0,0,canvas.width,canvas.height);
+    particules = particules.filter(function(p){ return p.y < canvas.height + 20; });
+    particules.forEach(function(p){
+      p.y += p.vy; p.x += p.vx; p.t += 0.1;
+      cctx.save(); cctx.translate(p.x, p.y); cctx.rotate(p.t);
+      cctx.fillStyle = p.c; cctx.fillRect(-p.taille/2, -p.taille/2, p.taille, p.taille*0.6);
+      cctx.restore();
+    });
+    if(particules.length){ animConf = requestAnimationFrame(boucleConf); }
+    else { animConf = null; cctx.clearRect(0,0,canvas.width,canvas.height); }
+  }
+
+  /* ---------- navigation ---------- */
+  var TOURS = 5;
+  var jeuActuel = null, tour = 0, verrou = false;
+
+  function montreAccueil(){
+    $("#ecran-accueil").classList.remove("cache");
+    $("#ecran-jeu").classList.add("cache");
+    $("#btnRetour").classList.add("cache");
+    jeuActuel = null;
+  }
+  function lanceJeu(nom){
+    jeuActuel = nom; tour = 0;
+    $("#ecran-accueil").classList.add("cache");
+    $("#ecran-jeu").classList.remove("cache");
+    $("#btnRetour").classList.remove("cache");
+    majProgress();
+    tourSuivant();
+  }
+  function majProgress(){
+    var html = "";
+    for(var i=0;i<TOURS;i++) html += '<div class="pt'+(i<tour?" ok":"")+'"></div>';
+    $("#progress").innerHTML = html;
+  }
+  function tourSuivant(){
+    verrou = false;
+    majProgress();
+    if(tour >= TOURS){ return ecranBravo(); }
+    if(jeuActuel === "calcul") jeuCalcul();
+    else if(jeuActuel === "mots") jeuMots();
+    else if(jeuActuel === "memo") jeuMemo();
+    else if(jeuActuel === "compte") jeuCompte();
+  }
+  function reussite(pts){
+    majEtoiles(pts); confettis(); sonBon();
+    tour++;
+    setTimeout(tourSuivant, 900);
+  }
+  function ecranBravo(){
+    sonVictoire(); confettis();
+    $("#progress").innerHTML = "";
+    $("#contenu-jeu").innerHTML =
+      '<div class="bravo"><span class="big">🏆</span>'+
+      '<h2>Bravo champion !</h2><p>Tu as fini la partie et gagné plein d’étoiles !</p>'+
+      '<div><button class="btn-grand" id="btnRejouer">Rejouer 🎮</button></div>'+
+      '<div style="margin-top:12px"><button class="btn-efface" id="btnMenu2">Retour au menu</button></div></div>';
+    $("#btnRejouer").addEventListener("click", function(){ lanceJeu(jeuActuel); });
+    $("#btnMenu2").addEventListener("click", montreAccueil);
+  }
+
+  function melange(t){
+    t = t.slice();
+    for(var i=t.length-1;i>0;i--){ var j=(Math.random()*(i+1))|0, tmp=t[i]; t[i]=t[j]; t[j]=tmp; }
+    return t;
+  }
+  function boutonsReponses(bonne, choix, pts){
+    var html = '<div class="reponses">';
+    choix.forEach(function(c){ html += '<button class="btn-rep" data-v="'+c+'">'+c+'</button>'; });
+    html += '</div>';
+    return {
+      html: html,
+      brancher: function(){
+        document.querySelectorAll(".btn-rep").forEach(function(b){
+          b.addEventListener("click", function(){
+            if(verrou) return;
+            if(String(b.dataset.v) === String(bonne)){
+              verrou = true; b.classList.add("bon");
+              reussite(pts);
+            }else{
+              b.classList.add("faux"); sonFaux();
+              setTimeout(function(){ b.classList.remove("faux"); }, 400);
+            }
+          });
+        });
+      }
+    };
+  }
+
+  /* ---------- jeu 1 : calcul ---------- */
+  function jeuCalcul(){
+    var addition = Math.random() < 0.6, a, b, bonne, signe;
+    if(addition){ a = 1+(Math.random()*10|0); b = 1+(Math.random()*10|0); bonne = a+b; signe="+"; }
+    else{ a = 5+(Math.random()*15|0); b = 1+(Math.random()*Math.min(a,9)|0); bonne = a-b; signe="−"; }
+    var choix = [bonne];
+    while(choix.length < 3){
+      var f = bonne + ((Math.random()*7|0) - 3);
+      if(f >= 0 && choix.indexOf(f) === -1) choix.push(f);
+    }
+    choix = melange(choix);
+    var r = boutonsReponses(bonne, choix, 2);
+    $("#contenu-jeu").innerHTML =
+      '<h2 class="consigne">Combien ça fait ? 🧮</h2>'+
+      '<div class="grand-texte">'+a+' '+signe+' '+b+' = ?</div>'+ r.html;
+    r.brancher();
+  }
+
+  /* ---------- jeu 2 : mots mélangés ---------- */
+  var MOTS = [
+    ["CHAT","🐱"],["CHIEN","🐶"],["VACHE","🐮"],["LION","🦁"],["POULE","🐔"],
+    ["LAPIN","🐰"],["SOURIS","🐭"],["POISSON","🐟"],["MAISON","🏠"],["POMME","🍎"],
+    ["BANANE","🍌"],["FRAISE","🍓"],["GATEAU","🍰"],["VELO","🚲"],["AVION","✈️"],
+    ["BATEAU","⛵"],["SOLEIL","☀️"],["LUNE","🌙"],["FLEUR","🌸"],["ARBRE","🌳"],
+    ["ROBOT","🤖"],["FUSEE","🚀"],["BALLON","⚽"],["ECOLE","🏫"]
+  ];
+  var motsRestants = [];
+  function jeuMots(){
+    if(!motsRestants.length) motsRestants = melange(MOTS);
+    var duo = motsRestants.pop(), mot = duo[0], emo = duo[1];
+    var lettres = melange(mot.split(""));
+    var html = '<h2 class="consigne">Écris le mot ! '+emo+'</h2><div class="slots">';
+    for(var i=0;i<mot.length;i++) html += '<div class="slot" data-i="'+i+'"></div>';
+    html += '</div><div class="lettres">';
+    lettres.forEach(function(l, i){ html += '<button class="btn-lettre" data-l="'+l+'" data-i="'+i+'">'+l+'</button>'; });
+    html += '</div><div><button class="btn-efface" id="btnEfface">🧽 Effacer</button></div>';
+    $("#contenu-jeu").innerHTML = html;
+
+    var saisie = [];
+    function rafraichit(){
+      document.querySelectorAll(".slot").forEach(function(s, i){
+        s.textContent = saisie[i] ? saisie[i].l : "";
+        s.classList.toggle("rempli", !!saisie[i]);
+      });
+    }
+    document.querySelectorAll(".btn-lettre").forEach(function(b){
+      b.addEventListener("click", function(){
+        if(verrou || b.disabled || saisie.length >= mot.length) return;
+        b.disabled = true;
+        saisie.push({l:b.dataset.l, btn:b});
+        rafraichit(); bip([440 + saisie.length*60], 0.1, "sine");
+        if(saisie.length === mot.length){
+          var essai = saisie.map(function(x){ return x.l; }).join("");
+          if(essai === mot){ verrou = true; reussite(3); }
+          else{
+            sonFaux();
+            var zone = $(".slots"); zone.style.animation = "secoue .35s";
+            setTimeout(function(){
+              zone.style.animation = "";
+              saisie.forEach(function(x){ x.btn.disabled = false; });
+              saisie = []; rafraichit();
+            }, 500);
+          }
+        }
+      });
+    });
+    $("#btnEfface").addEventListener("click", function(){
+      if(verrou) return;
+      saisie.forEach(function(x){ x.btn.disabled = false; });
+      saisie = []; rafraichit();
+    });
+  }
+
+  /* ---------- jeu 3 : mémo ---------- */
+  function jeuMemo(){
+    /* le mémo est une manche complète : on le joue une fois, il vaut 5 tours */
+    var animaux = melange(["🐱","🐶","🦁","🐸","🐼","🦊","🐷","🐵","🐨","🦉"]).slice(0,6);
+    var cartes = melange(animaux.concat(animaux));
+    var html = '<h2 class="consigne">Trouve les paires ! 🐾</h2><div class="memo-grille">';
+    cartes.forEach(function(e, i){ html += '<div class="memo-carte" data-e="'+e+'" data-i="'+i+'"><span class="dos">❓</span></div>'; });
+    html += '</div>';
+    $("#contenu-jeu").innerHTML = html;
+
+    var ouverte = null, trouvees = 0, gel = false;
+    document.querySelectorAll(".memo-carte").forEach(function(c){
+      c.addEventListener("click", function(){
+        if(gel || c.classList.contains("vue") || c.classList.contains("trouvee")) return;
+        c.classList.add("vue"); c.innerHTML = c.dataset.e;
+        bip([500], 0.08, "sine");
+        if(!ouverte){ ouverte = c; return; }
+        if(ouverte.dataset.e === c.dataset.e && ouverte !== c){
+          ouverte.classList.add("trouvee"); c.classList.add("trouvee");
+          ouverte.classList.remove("vue"); c.classList.remove("vue");
+          ouverte = null; trouvees++;
+          sonBon(); majEtoiles(1);
+          if(trouvees === 6){
+            tour = TOURS; /* manche terminée */
+            confettis();
+            setTimeout(tourSuivant, 900);
+          }
+        }else{
+          gel = true; sonFaux();
+          var a = ouverte, b = c; ouverte = null;
+          setTimeout(function(){
+            a.classList.remove("vue"); b.classList.remove("vue");
+            a.innerHTML = '<span class="dos">❓</span>'; b.innerHTML = '<span class="dos">❓</span>';
+            gel = false;
+          }, 800);
+        }
+      });
+    });
+  }
+
+  /* ---------- jeu 4 : compter ---------- */
+  function jeuCompte(){
+    var objets = ["⭐","🍎","🎈","🐞","🌸","⚽","🦋","🍪"];
+    var emo = objets[(Math.random()*objets.length)|0];
+    var bonne = 3 + (Math.random()*10|0); /* 3 à 12 */
+    var choix = [bonne];
+    while(choix.length < 3){
+      var f = bonne + ((Math.random()*5|0) - 2);
+      if(f >= 1 && choix.indexOf(f) === -1) choix.push(f);
+    }
+    choix = melange(choix);
+    var r = boutonsReponses(bonne, choix, 2);
+    var ligne = "";
+    for(var i=0;i<bonne;i++) ligne += emo;
+    $("#contenu-jeu").innerHTML =
+      '<h2 class="consigne">Combien y en a-t-il ? 👀</h2>'+
+      '<div class="zone-emojis">'+ligne+'</div>'+ r.html;
+    r.brancher();
+  }
+
+  /* ---------- branchements ---------- */
+  document.querySelectorAll(".carte-jeu").forEach(function(c){
+    c.addEventListener("click", function(){ bip([600], 0.08, "sine"); lanceJeu(c.dataset.jeu); });
+  });
+  $("#btnRetour").addEventListener("click", montreAccueil);
+})();
+</script>
+</body>
+</html>
