@@ -10,6 +10,7 @@ import {
   MENUISERIE_PHOTO_CATEGORIES, typeLabel, statusLabel, findMenuiserieTrade,
   newIntervention, computeOrderStatus, orderInterventions,
   BILLING_STATUS, BILLING_STATUS_STYLES, billingLabel,
+  isOrderBillable, effectiveBillingStatus,
   relanceBadgeStyle, relanceBorderStyle, orderRelances, newRelance,
   orderTotalHt, fmtEuro,
 } from '../../services/menuiserieService';
@@ -363,6 +364,13 @@ const BillingForm = ({ order, onSaved, onCancel }) => {
 
   return (
     <div className="space-y-4">
+      {!isOrderBillable(order) && (
+        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Ce bon n'est pas terminé : il apparaîtra automatiquement « À facturer »
+          quand toutes ses interventions seront terminées. Tu peux quand même
+          renseigner les prix dès maintenant.
+        </p>
+      )}
       <div>
         <label className="block text-sm font-medium mb-2">Prix HT par intervention</label>
         {interventions.length === 0 ? (
@@ -623,12 +631,18 @@ const OrderDetail = ({ order }) => {
       )}
       <div>
         <span className="text-gray-500">Facturation :</span>{' '}
-        <span className={`px-2 py-0.5 rounded-full text-xs ${BILLING_STATUS_STYLES[order.billing_status] || BILLING_STATUS_STYLES.a_facturer}`}>
-          {billingLabel(order.billing_status)}
-        </span>
-        {order.invoice_number && <span className="ml-2 text-xs text-gray-500">N° {order.invoice_number}</span>}
-        {order.billed_date && (
-          <span className="ml-2 text-xs text-gray-500">le {new Date(order.billed_date).toLocaleDateString('fr-FR')}</span>
+        {effectiveBillingStatus(order) ? (
+          <>
+            <span className={`px-2 py-0.5 rounded-full text-xs ${BILLING_STATUS_STYLES[effectiveBillingStatus(order)]}`}>
+              {billingLabel(effectiveBillingStatus(order))}
+            </span>
+            {order.invoice_number && <span className="ml-2 text-xs text-gray-500">N° {order.invoice_number}</span>}
+            {order.billed_date && (
+              <span className="ml-2 text-xs text-gray-500">le {new Date(order.billed_date).toLocaleDateString('fr-FR')}</span>
+            )}
+          </>
+        ) : (
+          <span className="text-xs text-gray-400 italic">bon non terminé</span>
         )}
       </div>
       {orderTotalHt(order) > 0 && (
@@ -888,11 +902,13 @@ function MenuiserieManagement() {
     const matchesStatus = statusFilter === 'all' || aggStatus === statusFilter;
     // Le filtre type matche si N'IMPORTE QUELLE intervention du bon a ce type.
     const matchesType = typeFilter === 'all' || ivs.some((iv) => iv.type === typeFilter);
+    // Le statut de facturation « effectif » : un bon non terminé n'est pas
+    // « à facturer » (c'est une consigne pour la secrétaire, pas un défaut).
     const matchesBilling =
       billingFilter === 'all' ||
       (billingFilter === 'relances'
         ? orderRelances(o).length > 0
-        : (o.billing_status || 'a_facturer') === billingFilter);
+        : effectiveBillingStatus(o) === billingFilter);
     return matchesSearch && matchesStatus && matchesType && matchesBilling;
   });
 
@@ -916,7 +932,9 @@ function MenuiserieManagement() {
       if (s === 'todo') acc.todo++;
       else if (s === 'in_progress') acc.inProgress++;
       else if (s === 'completed') acc.completed++;
-      if ((o.billing_status || 'a_facturer') !== 'facture') acc.aFacturer++;
+      // « À facturer » = bons terminés (ou devis déjà envoyé) pas encore facturés
+      const eff = effectiveBillingStatus(o);
+      if (eff !== null && eff !== 'facture') acc.aFacturer++;
       if (orderRelances(o).length > 0) acc.relances++;
       return acc;
     },
@@ -1018,6 +1036,7 @@ function MenuiserieManagement() {
           const completedCount = ivs.filter((i) => i.status === 'completed').length;
           const relances = orderRelances(order);
           const totalHt = orderTotalHt(order);
+          const billing = effectiveBillingStatus(order);
           return (
           <div key={order.id} className={`p-4 flex items-center justify-between gap-4 ${relanceBorderStyle(relances.length)}`}>
             <div className="space-y-1 min-w-0">
@@ -1030,9 +1049,11 @@ function MenuiserieManagement() {
                 <span className={`px-2 py-0.5 rounded-full text-xs ${MENUISERIE_STATUS_STYLES[aggregatedStatus] || ''}`}>
                   {statusLabel(aggregatedStatus)}
                 </span>
-                <span className={`px-2 py-0.5 rounded-full text-xs ${BILLING_STATUS_STYLES[order.billing_status] || BILLING_STATUS_STYLES.a_facturer}`}>
-                  {billingLabel(order.billing_status)}
-                </span>
+                {billing && (
+                  <span className={`px-2 py-0.5 rounded-full text-xs ${BILLING_STATUS_STYLES[billing]}`}>
+                    {billingLabel(billing)}
+                  </span>
+                )}
                 {relances.length > 0 && (
                   <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${relanceBadgeStyle(relances.length)}`}>
                     <Bell className="h-3 w-3" />

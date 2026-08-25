@@ -56,6 +56,21 @@ export const BILLING_STATUS_STYLES = {
 
 export const billingLabel = (status) => BILLING_STATUS[status] || BILLING_STATUS.a_facturer;
 
+// Un bon n'est facturable que lorsque TOUTES ses interventions sont terminées.
+export const isOrderBillable = (order) =>
+  computeOrderStatus(orderInterventions(order)) === 'completed';
+
+// Statut de facturation « effectif » pour l'affichage :
+//   - bon non terminé et rien renseigné par la secrétaire -> null (pas encore
+//     facturable, on n'affiche rien : « À facturer » est une vraie consigne)
+//   - sinon le statut stocké (devis envoyé / facturé restent affichés même si
+//     le bon repasse en cours, car saisis volontairement)
+export const effectiveBillingStatus = (order) => {
+  const s = order?.billing_status || 'a_facturer';
+  if (s === 'a_facturer' && !isOrderBillable(order)) return null;
+  return s;
+};
+
 // Style du badge « relances » selon leur nombre : 1 = jaune, 2 = orange, 3+ = rouge.
 export const relanceBadgeStyle = (count) => {
   if (count >= 3) return 'bg-red-100 text-red-800';

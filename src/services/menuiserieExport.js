@@ -1,5 +1,8 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-import { typeLabel, statusLabel, orderInterventions, billingLabel, orderRelances } from './menuiserieService';
+import {
+  typeLabel, statusLabel, orderInterventions, billingLabel, orderRelances,
+  effectiveBillingStatus,
+} from './menuiserieService';
 
 // =============================================================================
 // Export mensuel des interventions de menuiserie (CSV + PDF)
@@ -55,7 +58,8 @@ export const collectMonthRows = (orders, yearMonth, statuses = null) => {
         notes: iv.notes || '',
         priceHt: Number.isFinite(Number(iv.price_ht)) && iv.price_ht !== null && iv.price_ht !== ''
           ? Number(iv.price_ht) : null,
-        billing: billingLabel(order.billing_status),
+        // Vide tant que le bon n'est pas terminé (pas encore facturable)
+        billing: effectiveBillingStatus(order) ? billingLabel(effectiveBillingStatus(order)) : '',
         relancesCount: orderRelances(order).length,
       });
     }
