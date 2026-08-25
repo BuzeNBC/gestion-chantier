@@ -40,6 +40,62 @@ export const MENUISERIE_PHOTO_CATEGORIES = {
   autre: 'Autre',
 };
 
+// Statuts de facturation d'un bon (workflow secrétaire :
+// à facturer -> devis envoyé -> facturé)
+export const BILLING_STATUS = {
+  a_facturer: 'À facturer',
+  devis_envoye: 'Devis envoyé',
+  facture: 'Facturé',
+};
+
+export const BILLING_STATUS_STYLES = {
+  a_facturer: 'bg-amber-100 text-amber-800',
+  devis_envoye: 'bg-purple-100 text-purple-800',
+  facture: 'bg-emerald-100 text-emerald-800',
+};
+
+export const billingLabel = (status) => BILLING_STATUS[status] || BILLING_STATUS.a_facturer;
+
+// Style du badge « relances » selon leur nombre : 1 = jaune, 2 = orange, 3+ = rouge.
+export const relanceBadgeStyle = (count) => {
+  if (count >= 3) return 'bg-red-100 text-red-800';
+  if (count === 2) return 'bg-orange-100 text-orange-800';
+  if (count === 1) return 'bg-yellow-100 text-yellow-800';
+  return '';
+};
+
+// Bordure gauche de la ligne dans la liste admin, même code couleur.
+export const relanceBorderStyle = (count) => {
+  if (count >= 3) return 'border-l-4 border-red-500';
+  if (count === 2) return 'border-l-4 border-orange-400';
+  if (count === 1) return 'border-l-4 border-yellow-400';
+  return '';
+};
+
+export const orderRelances = (order) => (Array.isArray(order?.relances) ? order.relances : []);
+
+export const newRelance = () => ({
+  id: typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : (
+    'rl-' + Math.random().toString(36).slice(2) + Date.now().toString(36)
+  ),
+  date: new Date().toISOString().slice(0, 10),
+  note: '',
+  created_at: new Date().toISOString(),
+});
+
+// Total HT d'un bon = somme des prix des interventions qui en ont un.
+export const orderTotalHt = (order) =>
+  orderInterventions(order).reduce((sum, iv) => {
+    const p = Number(iv.price_ht);
+    return sum + (Number.isFinite(p) ? p : 0);
+  }, 0);
+
+export const fmtEuro = (n) => {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return '';
+  return v.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+};
+
 // Libellé lisible d'un type d'intervention.
 // Le type d'un bon provient des tâches du corps d'état « Menuiserie » : c'est
 // donc déjà un libellé lisible, qu'on affiche tel quel. On garde la table

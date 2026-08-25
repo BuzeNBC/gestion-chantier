@@ -1,5 +1,5 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-import { typeLabel, statusLabel, orderInterventions } from './menuiserieService';
+import { typeLabel, statusLabel, orderInterventions, billingLabel, orderRelances } from './menuiserieService';
 
 // =============================================================================
 // Export mensuel des interventions de menuiserie (CSV + PDF)
@@ -53,6 +53,10 @@ export const collectMonthRows = (orders, yearMonth, statuses = null) => {
         measurementsCount: (iv.measurements || []).length,
         photosCount: (iv.photos || []).length,
         notes: iv.notes || '',
+        priceHt: Number.isFinite(Number(iv.price_ht)) && iv.price_ht !== null && iv.price_ht !== ''
+          ? Number(iv.price_ht) : null,
+        billing: billingLabel(order.billing_status),
+        relancesCount: orderRelances(order).length,
       });
     }
   }
@@ -87,7 +91,8 @@ export const exportMonthCsv = (orders, yearMonth, statuses = null) => {
   const header = [
     'Mois', 'Adresse', 'Client', 'Téléphone', 'N° de BT', 'Chargé d\'affaire',
     'Menuisier', 'Référence', 'Date', 'Date prévue', 'Date réalisation',
-    'Intervention', 'Statut', 'Nb cotes', 'Nb photos', 'Notes',
+    'Intervention', 'Statut', 'Prix HT (€)', 'Facturation', 'Relances',
+    'Nb cotes', 'Nb photos', 'Notes',
   ];
   const lines = [header.join(';')];
   for (const r of rows) {
@@ -105,6 +110,10 @@ export const exportMonthCsv = (orders, yearMonth, statuses = null) => {
       fmtDate(r.completed),
       esc(r.type),
       esc(r.status),
+      // Décimale à virgule pour Excel FR
+      r.priceHt !== null ? String(r.priceHt.toFixed(2)).replace('.', ',') : '',
+      esc(r.billing),
+      r.relancesCount || '',
       r.measurementsCount,
       r.photosCount,
       esc(r.notes),
@@ -187,10 +196,11 @@ export const exportMonthPdf = async (orders, yearMonth, statuses = null) => {
   const colX = {
     date: MARGIN,
     type: MARGIN + 70,
-    status: MARGIN + 380,
-    bt: MARGIN + 460,
-    ca: MARGIN + 560,
-    extra: MARGIN + 690,
+    status: MARGIN + 340,
+    bt: MARGIN + 420,
+    ca: MARGIN + 500,
+    extra: MARGIN + 610,
+    price: MARGIN + 690,
   };
 
   const ensureSpace = (needed) => {
@@ -235,6 +245,7 @@ export const exportMonthPdf = async (orders, yearMonth, statuses = null) => {
       page.drawText('N° BT', { x: colX.bt, y, size: 8, font: helveticaBold, color: mutedColor });
       page.drawText('Chargé d\'aff.', { x: colX.ca, y, size: 8, font: helveticaBold, color: mutedColor });
       page.drawText('Cotes/Photos', { x: colX.extra, y, size: 8, font: helveticaBold, color: mutedColor });
+      page.drawText('Prix HT', { x: colX.price, y, size: 8, font: helveticaBold, color: mutedColor });
       y -= 16;
     }
 
@@ -243,11 +254,14 @@ export const exportMonthPdf = async (orders, yearMonth, statuses = null) => {
       page.drawRectangle({ x: MARGIN, y: y - 4, width: CONTENT_WIDTH, height: 15, color: backgroundColor });
     }
     page.drawText(fmtDate(r.date), { x: colX.date + 2, y, size: 8, font: helvetica, color: textColor });
-    page.drawText(clean(r.type).slice(0, 62), { x: colX.type, y, size: 8, font: helvetica, color: textColor });
+    page.drawText(clean(r.type).slice(0, 55), { x: colX.type, y, size: 8, font: helvetica, color: textColor });
     page.drawText(clean(r.status), { x: colX.status, y, size: 8, font: helvetica, color: textColor });
-    page.drawText(clean(r.bt).slice(0, 16), { x: colX.bt, y, size: 8, font: helvetica, color: textColor });
-    page.drawText(clean(r.chargeAffaire).slice(0, 22), { x: colX.ca, y, size: 8, font: helvetica, color: textColor });
+    page.drawText(clean(r.bt).slice(0, 14), { x: colX.bt, y, size: 8, font: helvetica, color: textColor });
+    page.drawText(clean(r.chargeAffaire).slice(0, 20), { x: colX.ca, y, size: 8, font: helvetica, color: textColor });
     page.drawText(`${r.measurementsCount} / ${r.photosCount}`, { x: colX.extra, y, size: 8, font: helvetica, color: textColor });
+    if (r.priceHt !== null) {
+      page.drawText(`${r.priceHt.toFixed(2).replace('.', ',')} EUR`, { x: colX.price, y, size: 8, font: helvetica, color: textColor });
+    }
     y -= 15;
   }
 
@@ -259,9 +273,10 @@ export const exportMonthPdf = async (orders, yearMonth, statuses = null) => {
     const inProg = rows.filter((r) => r.rawStatus === 'in_progress').length;
     const todo = rows.filter((r) => r.rawStatus === 'todo').length;
     const addresses = new Set(rows.map((r) => r.address)).size;
+    const totalHt = rows.reduce((s, r) => s + (r.priceHt || 0), 0);
     page.drawRectangle({ x: MARGIN, y: y - 8, width: CONTENT_WIDTH, height: 26, color: backgroundColor });
     page.drawText(
-      clean(`Total : ${rows.length} interventions sur ${addresses} adresse${addresses > 1 ? 's' : ''} — ${done} terminée${done > 1 ? 's' : ''}, ${inProg} en cours, ${todo} à faire`),
+      clean(`Total : ${rows.length} interventions sur ${addresses} adresse${addresses > 1 ? 's' : ''} — ${done} terminée${done > 1 ? 's' : ''}, ${inProg} en cours, ${todo} à faire${totalHt > 0 ? ` — ${totalHt.toFixed(2).replace('.', ',')} EUR HT` : ''}`),
       { x: MARGIN + 8, y, size: 10, font: helveticaBold, color: primaryColor },
     );
   }

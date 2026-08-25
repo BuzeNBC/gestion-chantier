@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import {
   Plus, Edit, Trash, X, Search, Eye, MapPin, User, Calendar, FileText, Download,
+  Euro, Bell,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { DBService, STORES, generateUUID } from '../../services/dbService';
@@ -8,6 +9,9 @@ import {
   MENUISERIE_STATUS, MENUISERIE_STATUS_STYLES,
   MENUISERIE_PHOTO_CATEGORIES, typeLabel, statusLabel, findMenuiserieTrade,
   newIntervention, computeOrderStatus, orderInterventions,
+  BILLING_STATUS, BILLING_STATUS_STYLES, billingLabel,
+  relanceBadgeStyle, relanceBorderStyle, orderRelances, newRelance,
+  orderTotalHt, fmtEuro,
 } from '../../services/menuiserieService';
 import { generateMenuiseriePdf, openOrDownloadPdf } from '../../services/menuiseriePdf';
 import { exportMonthCsv, exportMonthPdf, monthLabel } from '../../services/menuiserieExport';
@@ -309,6 +313,266 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
   );
 };
 
+// Formulaire « Facturation » : la secrétaire renseigne le prix HT de chaque
+// intervention, le statut (à facturer / devis envoyé / facturé), le n° de
+// devis/facture et la date. Le total se calcule tout seul.
+const BillingForm = ({ order, onSaved, onCancel }) => {
+  const interventions = orderInterventions(order);
+  const [prices, setPrices] = useState(() =>
+    Object.fromEntries(interventions.map((iv) => [iv.id, iv.price_ht ?? '']))
+  );
+  const [billingStatus, setBillingStatus] = useState(order.billing_status || 'a_facturer');
+  const [invoiceNumber, setInvoiceNumber] = useState(order.invoice_number || '');
+  const [billedDate, setBilledDate] = useState(order.billed_date || '');
+  const [saving, setSaving] = useState(false);
+
+  const total = interventions.reduce((sum, iv) => {
+    const p = Number(String(prices[iv.id]).replace(',', '.'));
+    return sum + (Number.isFinite(p) ? p : 0);
+  }, 0);
+
+  const save = async () => {
+    try {
+      setSaving(true);
+      // Réinjecte les prix dans les interventions (sans toucher au reste :
+      // cotes, photos, statut… restent intacts).
+      const updatedInterventions = interventions.map((iv) => {
+        const raw = String(prices[iv.id] ?? '').replace(',', '.').trim();
+        const p = raw === '' ? null : Number(raw);
+        const { _legacy, ...rest } = iv; // eslint-disable-line no-unused-vars
+        return { ...rest, price_ht: Number.isFinite(p) ? p : null };
+      });
+      const { error } = await supabase
+        .from('menuiserie_orders')
+        .update({
+          interventions: updatedInterventions,
+          billing_status: billingStatus,
+          invoice_number: invoiceNumber.trim() || null,
+          billed_date: billedDate || null,
+        })
+        .eq('id', order.id);
+      if (error) throw error;
+      onSaved();
+    } catch (e) {
+      console.error('Erreur sauvegarde facturation :', e);
+      alert('Erreur lors de la sauvegarde de la facturation.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium mb-2">Prix HT par intervention</label>
+        {interventions.length === 0 ? (
+          <p className="text-sm text-gray-400 italic">Aucune intervention sur ce bon.</p>
+        ) : (
+          <div className="space-y-2">
+            {interventions.map((iv) => (
+              <div key={iv.id} className="flex items-center gap-3">
+                <div className="flex-1 min-w-0 text-sm">
+                  <span className="text-gray-800">{typeLabel(iv.type)}</span>{' '}
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] ${MENUISERIE_STATUS_STYLES[iv.status] || ''}`}>
+                    {statusLabel(iv.status)}
+                  </span>
+                </div>
+                <div className="relative w-32 flex-shrink-0">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={prices[iv.id]}
+                    onChange={(e) => setPrices((p) => ({ ...p, [iv.id]: e.target.value }))}
+                    className="w-full pl-3 pr-7 py-2 border border-gray-300 rounded-lg text-right"
+                    placeholder="0,00"
+                  />
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">€</span>
+                </div>
+              </div>
+            ))}
+            <div className="flex items-center justify-between pt-2 border-t text-sm">
+              <span className="font-medium text-gray-700">Total HT</span>
+              <span className="font-bold text-gray-900">{fmtEuro(total)}</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-1">Statut de facturation</label>
+        <div className="flex gap-2">
+          {Object.entries(BILLING_STATUS).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setBillingStatus(value)}
+              className={`flex-1 px-3 py-2 rounded-lg text-sm border ${
+                billingStatus === value
+                  ? `${BILLING_STATUS_STYLES[value]} border-transparent font-semibold ring-2 ring-offset-1 ring-blue-400`
+                  : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium mb-1">N° devis / facture</label>
+          <input
+            type="text"
+            value={invoiceNumber}
+            onChange={(e) => setInvoiceNumber(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            placeholder="Ex: F-2026-042"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Date de facturation</label>
+          <input
+            type="date"
+            value={billedDate}
+            onChange={(e) => setBilledDate(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          />
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-3 pt-2">
+        <button onClick={onCancel} className="px-4 py-2 text-gray-600 rounded-lg hover:bg-gray-100">
+          Annuler
+        </button>
+        <button
+          onClick={save}
+          disabled={saving}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+        >
+          {saving ? 'Enregistrement…' : 'Enregistrer'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// Formulaire « Relances » : historique des relances reçues pour ce bon
+// (date + note), avec ajout et suppression. Le nombre de relances pilote la
+// couleur du badge et la remontée du bon en haut de la liste.
+const RelancesForm = ({ order, onSaved, onCancel }) => {
+  const [relances, setRelances] = useState(() => orderRelances(order));
+  const [draft, setDraft] = useState(() => newRelance());
+  const [saving, setSaving] = useState(false);
+
+  const addDraft = () => {
+    if (!draft.date) {
+      alert('Renseigne la date de la relance.');
+      return;
+    }
+    setRelances((r) => [...r, { ...draft, note: draft.note.trim() }]);
+    setDraft(newRelance());
+  };
+
+  const removeRelance = (id) => setRelances((r) => r.filter((x) => x.id !== id));
+
+  const save = async () => {
+    try {
+      setSaving(true);
+      // Si une relance est en cours de saisie (note remplie) mais pas encore
+      // « Ajoutée », on l'inclut quand même pour éviter de la perdre.
+      const pending = draft.note.trim() ? [{ ...draft, note: draft.note.trim() }] : [];
+      const { error } = await supabase
+        .from('menuiserie_orders')
+        .update({ relances: [...relances, ...pending] })
+        .eq('id', order.id);
+      if (error) throw error;
+      onSaved();
+    } catch (e) {
+      console.error('Erreur sauvegarde relances :', e);
+      alert('Erreur lors de la sauvegarde des relances.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const sorted = [...relances].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+  return (
+    <div className="space-y-4">
+      {sorted.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-sm font-medium">Relances enregistrées</label>
+            <span className={`px-2 py-0.5 rounded-full text-xs ${relanceBadgeStyle(sorted.length)}`}>
+              {sorted.length} relance{sorted.length > 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {sorted.map((r, idx) => (
+              <div key={r.id} className="flex items-start gap-3 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                <span className={`mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold ${relanceBadgeStyle(idx + 1)}`}>
+                  #{idx + 1}
+                </span>
+                <div className="flex-1 min-w-0 text-sm">
+                  <p className="text-gray-800 font-medium">
+                    {r.date ? new Date(r.date).toLocaleDateString('fr-FR') : 'Date inconnue'}
+                  </p>
+                  {r.note && <p className="text-gray-600 whitespace-pre-wrap">{r.note}</p>}
+                </div>
+                <button
+                  onClick={() => removeRelance(r.id)}
+                  className="p-1 text-red-500 hover:bg-red-50 rounded"
+                  aria-label="Supprimer la relance"
+                >
+                  <Trash className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="border border-dashed border-gray-300 rounded-lg p-3 space-y-3">
+        <label className="block text-sm font-medium">Nouvelle relance</label>
+        <div className="flex gap-3">
+          <input
+            type="date"
+            value={draft.date}
+            onChange={(e) => setDraft((d) => ({ ...d, date: e.target.value }))}
+            className="px-3 py-2 border border-gray-300 rounded-lg"
+          />
+          <input
+            type="text"
+            value={draft.note}
+            onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))}
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+            placeholder="Qui a relancé, par quel moyen, quoi…"
+          />
+        </div>
+        <button
+          onClick={addDraft}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm"
+        >
+          <Plus className="h-4 w-4" /> Ajouter la relance
+        </button>
+      </div>
+
+      <div className="flex justify-end gap-3 pt-2">
+        <button onClick={onCancel} className="px-4 py-2 text-gray-600 rounded-lg hover:bg-gray-100">
+          Annuler
+        </button>
+        <button
+          onClick={save}
+          disabled={saving}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+        >
+          {saving ? 'Enregistrement…' : 'Enregistrer'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const OrderDetail = ({ order }) => {
   const [pdfGenerating, setPdfGenerating] = useState(false);
 
@@ -357,7 +621,42 @@ const OrderDetail = ({ order }) => {
       {order.scheduled_date && (
         <div><span className="text-gray-500">Prévu :</span> {new Date(order.scheduled_date).toLocaleDateString('fr-FR')}</div>
       )}
+      <div>
+        <span className="text-gray-500">Facturation :</span>{' '}
+        <span className={`px-2 py-0.5 rounded-full text-xs ${BILLING_STATUS_STYLES[order.billing_status] || BILLING_STATUS_STYLES.a_facturer}`}>
+          {billingLabel(order.billing_status)}
+        </span>
+        {order.invoice_number && <span className="ml-2 text-xs text-gray-500">N° {order.invoice_number}</span>}
+        {order.billed_date && (
+          <span className="ml-2 text-xs text-gray-500">le {new Date(order.billed_date).toLocaleDateString('fr-FR')}</span>
+        )}
+      </div>
+      {orderTotalHt(order) > 0 && (
+        <div><span className="text-gray-500">Total HT :</span> <span className="font-semibold">{fmtEuro(orderTotalHt(order))}</span></div>
+      )}
     </div>
+
+    {orderRelances(order).length > 0 && (
+      <div>
+        <h3 className="font-medium text-gray-700 mb-2 flex items-center gap-2">
+          Relances
+          <span className={`px-2 py-0.5 rounded-full text-xs ${relanceBadgeStyle(orderRelances(order).length)}`}>
+            {orderRelances(order).length}
+          </span>
+        </h3>
+        <ul className="space-y-1 text-sm text-gray-600">
+          {[...orderRelances(order)]
+            .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+            .map((r, idx) => (
+              <li key={r.id}>
+                <span className="font-medium">#{idx + 1}</span>{' '}
+                — {r.date ? new Date(r.date).toLocaleDateString('fr-FR') : 'date inconnue'}
+                {r.note && <span className="text-gray-500"> : {r.note}</span>}
+              </li>
+            ))}
+        </ul>
+      </div>
+    )}
 
     {order.description && (
       <div>
@@ -382,9 +681,14 @@ const OrderDetail = ({ order }) => {
               <span className="text-gray-500">#{idx + 1} —</span>{' '}
               <span className="font-medium text-blue-700">{typeLabel(iv.type)}</span>
             </div>
-            <span className={`px-2 py-0.5 rounded-full text-xs ${MENUISERIE_STATUS_STYLES[iv.status] || ''}`}>
-              {statusLabel(iv.status)}
-            </span>
+            <div className="flex items-center gap-2">
+              {Number.isFinite(Number(iv.price_ht)) && iv.price_ht !== null && iv.price_ht !== '' && (
+                <span className="text-sm font-semibold text-gray-800">{fmtEuro(iv.price_ht)}</span>
+              )}
+              <span className={`px-2 py-0.5 rounded-full text-xs ${MENUISERIE_STATUS_STYLES[iv.status] || ''}`}>
+                {statusLabel(iv.status)}
+              </span>
+            </div>
           </div>
           {iv.completed_date && (
             <p className="text-xs text-gray-500">Réalisé le {new Date(iv.completed_date).toLocaleDateString('fr-FR')}</p>
@@ -436,6 +740,7 @@ function MenuiserieManagement() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [billingFilter, setBillingFilter] = useState('all');
 
   const loadData = useCallback(async () => {
     try {
@@ -583,7 +888,25 @@ function MenuiserieManagement() {
     const matchesStatus = statusFilter === 'all' || aggStatus === statusFilter;
     // Le filtre type matche si N'IMPORTE QUELLE intervention du bon a ce type.
     const matchesType = typeFilter === 'all' || ivs.some((iv) => iv.type === typeFilter);
-    return matchesSearch && matchesStatus && matchesType;
+    const matchesBilling =
+      billingFilter === 'all' ||
+      (billingFilter === 'relances'
+        ? orderRelances(o).length > 0
+        : (o.billing_status || 'a_facturer') === billingFilter);
+    return matchesSearch && matchesStatus && matchesType && matchesBilling;
+  });
+
+  // Les bons relancés remontent en haut : d'abord par nombre de relances
+  // (3 relances = plus urgent), puis par relance la plus récente, puis les
+  // autres par date de création (ordre d'origine de la requête).
+  const lastRelanceDate = (o) =>
+    orderRelances(o).reduce((max, r) => ((r.date || '') > max ? r.date : max), '');
+  const sortedOrders = [...filtered].sort((a, b) => {
+    const ra = orderRelances(a).length;
+    const rb = orderRelances(b).length;
+    if (ra !== rb) return rb - ra;
+    if (ra > 0) return lastRelanceDate(b).localeCompare(lastRelanceDate(a));
+    return 0; // conserve l'ordre created_at desc de la requête
   });
 
   const stats = orders.reduce(
@@ -593,9 +916,11 @@ function MenuiserieManagement() {
       if (s === 'todo') acc.todo++;
       else if (s === 'in_progress') acc.inProgress++;
       else if (s === 'completed') acc.completed++;
+      if ((o.billing_status || 'a_facturer') !== 'facture') acc.aFacturer++;
+      if (orderRelances(o).length > 0) acc.relances++;
       return acc;
     },
-    { total: 0, todo: 0, inProgress: 0, completed: 0 },
+    { total: 0, todo: 0, inProgress: 0, completed: 0, aFacturer: 0, relances: 0 },
   );
 
   // Options du filtre « type » : tâches du corps d'état + types présents dans
@@ -636,11 +961,23 @@ function MenuiserieManagement() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-500">Total</p><p className="text-2xl font-bold text-gray-800">{stats.total}</p></div>
         <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-500">À faire</p><p className="text-2xl font-bold text-gray-600">{stats.todo}</p></div>
         <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-500">En cours</p><p className="text-2xl font-bold text-blue-600">{stats.inProgress}</p></div>
         <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-500">Terminés</p><p className="text-2xl font-bold text-green-600">{stats.completed}</p></div>
+        <button
+          onClick={() => setBillingFilter((f) => (f === 'a_facturer' ? 'all' : 'a_facturer'))}
+          className={`bg-white p-4 rounded-lg shadow text-left hover:ring-2 hover:ring-amber-300 ${billingFilter === 'a_facturer' ? 'ring-2 ring-amber-400' : ''}`}
+        >
+          <p className="text-sm text-gray-500">À facturer</p><p className="text-2xl font-bold text-amber-600">{stats.aFacturer}</p>
+        </button>
+        <button
+          onClick={() => setBillingFilter((f) => (f === 'relances' ? 'all' : 'relances'))}
+          className={`bg-white p-4 rounded-lg shadow text-left hover:ring-2 hover:ring-red-300 ${billingFilter === 'relances' ? 'ring-2 ring-red-400' : ''}`}
+        >
+          <p className="text-sm text-gray-500">Avec relances</p><p className="text-2xl font-bold text-red-600">{stats.relances}</p>
+        </button>
       </div>
 
       {/* Filtres */}
@@ -663,19 +1000,26 @@ function MenuiserieManagement() {
           <option value="all">Tous les types</option>
           {typeFilterOptions.map((t) => <option key={t} value={t}>{typeLabel(t)}</option>)}
         </select>
+        <select value={billingFilter} onChange={(e) => setBillingFilter(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg">
+          <option value="all">Toute facturation</option>
+          {Object.entries(BILLING_STATUS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          <option value="relances">Avec relances</option>
+        </select>
       </div>
 
       {/* Liste */}
       <div className="bg-white rounded-lg shadow divide-y">
-        {filtered.length === 0 && (
+        {sortedOrders.length === 0 && (
           <div className="p-8 text-center text-gray-500">Aucun bon ne correspond.</div>
         )}
-        {filtered.map((order) => {
+        {sortedOrders.map((order) => {
           const ivs = orderInterventions(order);
           const aggregatedStatus = computeOrderStatus(ivs);
           const completedCount = ivs.filter((i) => i.status === 'completed').length;
+          const relances = orderRelances(order);
+          const totalHt = orderTotalHt(order);
           return (
-          <div key={order.id} className="p-4 flex items-center justify-between gap-4">
+          <div key={order.id} className={`p-4 flex items-center justify-between gap-4 ${relanceBorderStyle(relances.length)}`}>
             <div className="space-y-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-semibold text-gray-800">{order.client_name || 'Client non renseigné'}</span>
@@ -686,6 +1030,15 @@ function MenuiserieManagement() {
                 <span className={`px-2 py-0.5 rounded-full text-xs ${MENUISERIE_STATUS_STYLES[aggregatedStatus] || ''}`}>
                   {statusLabel(aggregatedStatus)}
                 </span>
+                <span className={`px-2 py-0.5 rounded-full text-xs ${BILLING_STATUS_STYLES[order.billing_status] || BILLING_STATUS_STYLES.a_facturer}`}>
+                  {billingLabel(order.billing_status)}
+                </span>
+                {relances.length > 0 && (
+                  <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${relanceBadgeStyle(relances.length)}`}>
+                    <Bell className="h-3 w-3" />
+                    {relances.length} relance{relances.length > 1 ? 's' : ''}
+                  </span>
+                )}
                 {ivs.length > 1 && (
                   <span className="text-xs text-gray-500">
                     {completedCount}/{ivs.length} interventions
@@ -726,9 +1079,18 @@ function MenuiserieManagement() {
                     {new Date(order.scheduled_date).toLocaleDateString('fr-FR')}
                   </span>
                 )}
+                {totalHt > 0 && (
+                  <span className="font-semibold text-gray-700">{fmtEuro(totalHt)} HT</span>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
+              <button onClick={() => setModal({ type: 'billing', data: order })} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg" aria-label="Facturation">
+                <Euro className="h-4 w-4" />
+              </button>
+              <button onClick={() => setModal({ type: 'relances', data: order })} className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg" aria-label="Relances">
+                <Bell className="h-4 w-4" />
+              </button>
               <button onClick={() => setModal({ type: 'detail', data: order })} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg" aria-label="Voir">
                 <Eye className="h-4 w-4" />
               </button>
@@ -763,6 +1125,24 @@ function MenuiserieManagement() {
             interventionOptions={interventionOptions}
             chargeAffaireOptions={chargeAffaireOptions}
             onSubmit={handleEdit}
+            onCancel={() => setModal({ type: null })}
+          />
+        </Modal>
+      )}
+      {modal.type === 'billing' && (
+        <Modal title={`Facturation — ${modal.data.client_name || 'bon'}`} onClose={() => setModal({ type: null })}>
+          <BillingForm
+            order={modal.data}
+            onSaved={() => { setModal({ type: null }); loadData(); }}
+            onCancel={() => setModal({ type: null })}
+          />
+        </Modal>
+      )}
+      {modal.type === 'relances' && (
+        <Modal title={`Relances — ${modal.data.client_name || 'bon'}`} onClose={() => setModal({ type: null })}>
+          <RelancesForm
+            order={modal.data}
+            onSaved={() => { setModal({ type: null }); loadData(); }}
             onCancel={() => setModal({ type: null })}
           />
         </Modal>
