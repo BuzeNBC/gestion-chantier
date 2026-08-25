@@ -40,34 +40,43 @@ export const MENUISERIE_PHOTO_CATEGORIES = {
   autre: 'Autre',
 };
 
-// Statuts de facturation d'un bon (workflow secrétaire :
-// à facturer -> devis envoyé -> facturé)
+// Statuts de facturation d'un bon — parcours de la secrétaire :
+// devis à faire -> devis fait -> à facturer -> facturé
 export const BILLING_STATUS = {
+  devis_a_faire: 'Devis à faire',
+  devis_fait: 'Devis fait',
   a_facturer: 'À facturer',
-  devis_envoye: 'Devis envoyé',
   facture: 'Facturé',
 };
 
 export const BILLING_STATUS_STYLES = {
+  devis_a_faire: 'bg-sky-100 text-sky-800',
+  devis_fait: 'bg-purple-100 text-purple-800',
   a_facturer: 'bg-amber-100 text-amber-800',
-  devis_envoye: 'bg-purple-100 text-purple-800',
   facture: 'bg-emerald-100 text-emerald-800',
 };
 
-export const billingLabel = (status) => BILLING_STATUS[status] || BILLING_STATUS.a_facturer;
+export const billingLabel = (status) => {
+  // Anciennes valeurs (avant migration 0008) : on les mappe pour l'affichage.
+  if (status === 'devis_envoye') return BILLING_STATUS.devis_fait;
+  return BILLING_STATUS[status] || BILLING_STATUS.devis_a_faire;
+};
 
 // Un bon n'est facturable que lorsque TOUTES ses interventions sont terminées.
 export const isOrderBillable = (order) =>
   computeOrderStatus(orderInterventions(order)) === 'completed';
 
 // Statut de facturation « effectif » pour l'affichage :
-//   - bon non terminé et rien renseigné par la secrétaire -> null (pas encore
-//     facturable, on n'affiche rien : « À facturer » est une vraie consigne)
-//   - sinon le statut stocké (devis envoyé / facturé restent affichés même si
-//     le bon repasse en cours, car saisis volontairement)
+//   - bon non terminé et rien renseigné par la secrétaire -> null (le parcours
+//     devis/facture ne démarre que quand le bon est terminé)
+//   - sinon le statut stocké (les statuts saisis volontairement restent
+//     affichés même si le bon repasse en cours)
 export const effectiveBillingStatus = (order) => {
-  const s = order?.billing_status || 'a_facturer';
-  if (s === 'a_facturer' && !isOrderBillable(order)) return null;
+  let s = order?.billing_status || 'devis_a_faire';
+  if (s === 'devis_envoye') s = 'devis_fait'; // ancienne valeur (avant 0008)
+  // Un bon non terminé ne peut être ni « devis à faire » ni « à facturer »
+  // (« à facturer » couvre aussi l'ancien défaut d'une base non migrée).
+  if ((s === 'devis_a_faire' || s === 'a_facturer') && !isOrderBillable(order)) return null;
   return s;
 };
 

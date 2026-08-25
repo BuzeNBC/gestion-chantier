@@ -322,7 +322,11 @@ const BillingForm = ({ order, onSaved, onCancel }) => {
   const [prices, setPrices] = useState(() =>
     Object.fromEntries(interventions.map((iv) => [iv.id, iv.price_ht ?? '']))
   );
-  const [billingStatus, setBillingStatus] = useState(order.billing_status || 'a_facturer');
+  const [billingStatus, setBillingStatus] = useState(() => {
+    const s = order.billing_status || 'devis_a_faire';
+    if (s === 'devis_envoye') return 'devis_fait'; // ancienne valeur (avant 0008)
+    return BILLING_STATUS[s] ? s : 'devis_a_faire';
+  });
   const [invoiceNumber, setInvoiceNumber] = useState(order.invoice_number || '');
   const [billedDate, setBilledDate] = useState(order.billed_date || '');
   const [saving, setSaving] = useState(false);
@@ -366,7 +370,7 @@ const BillingForm = ({ order, onSaved, onCancel }) => {
     <div className="space-y-4">
       {!isOrderBillable(order) && (
         <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          Ce bon n'est pas terminé : il apparaîtra automatiquement « À facturer »
+          Ce bon n'est pas terminé : il apparaîtra automatiquement « Devis à faire »
           quand toutes ses interventions seront terminées. Tu peux quand même
           renseigner les prix dès maintenant.
         </p>
@@ -407,14 +411,14 @@ const BillingForm = ({ order, onSaved, onCancel }) => {
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-1">Statut de facturation</label>
-        <div className="flex gap-2">
+        <label className="block text-sm font-medium mb-1">Étape devis / facturation</label>
+        <div className="grid grid-cols-2 gap-2">
           {Object.entries(BILLING_STATUS).map(([value, label]) => (
             <button
               key={value}
               type="button"
               onClick={() => setBillingStatus(value)}
-              className={`flex-1 px-3 py-2 rounded-lg text-sm border ${
+              className={`px-3 py-2 rounded-lg text-sm border ${
                 billingStatus === value
                   ? `${BILLING_STATUS_STYLES[value]} border-transparent font-semibold ring-2 ring-offset-1 ring-blue-400`
                   : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
@@ -424,6 +428,9 @@ const BillingForm = ({ order, onSaved, onCancel }) => {
             </button>
           ))}
         </div>
+        <p className="text-xs text-gray-500 mt-1">
+          Parcours : Devis à faire → Devis fait → À facturer → Facturé.
+        </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -904,11 +911,14 @@ function MenuiserieManagement() {
     const matchesType = typeFilter === 'all' || ivs.some((iv) => iv.type === typeFilter);
     // Le statut de facturation « effectif » : un bon non terminé n'est pas
     // « à facturer » (c'est une consigne pour la secrétaire, pas un défaut).
+    const effBilling = effectiveBillingStatus(o);
     const matchesBilling =
       billingFilter === 'all' ||
       (billingFilter === 'relances'
         ? orderRelances(o).length > 0
-        : effectiveBillingStatus(o) === billingFilter);
+        : billingFilter === 'pending'
+          ? effBilling !== null && effBilling !== 'facture'
+          : effBilling === billingFilter);
     return matchesSearch && matchesStatus && matchesType && matchesBilling;
   });
 
@@ -932,13 +942,13 @@ function MenuiserieManagement() {
       if (s === 'todo') acc.todo++;
       else if (s === 'in_progress') acc.inProgress++;
       else if (s === 'completed') acc.completed++;
-      // « À facturer » = bons terminés (ou devis déjà envoyé) pas encore facturés
+      // « À traiter » = bons entrés dans le parcours devis/facture, pas encore facturés
       const eff = effectiveBillingStatus(o);
-      if (eff !== null && eff !== 'facture') acc.aFacturer++;
+      if (eff !== null && eff !== 'facture') acc.aTraiter++;
       if (orderRelances(o).length > 0) acc.relances++;
       return acc;
     },
-    { total: 0, todo: 0, inProgress: 0, completed: 0, aFacturer: 0, relances: 0 },
+    { total: 0, todo: 0, inProgress: 0, completed: 0, aTraiter: 0, relances: 0 },
   );
 
   // Options du filtre « type » : tâches du corps d'état + types présents dans
@@ -985,10 +995,10 @@ function MenuiserieManagement() {
         <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-500">En cours</p><p className="text-2xl font-bold text-blue-600">{stats.inProgress}</p></div>
         <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-500">Terminés</p><p className="text-2xl font-bold text-green-600">{stats.completed}</p></div>
         <button
-          onClick={() => setBillingFilter((f) => (f === 'a_facturer' ? 'all' : 'a_facturer'))}
-          className={`bg-white p-4 rounded-lg shadow text-left hover:ring-2 hover:ring-amber-300 ${billingFilter === 'a_facturer' ? 'ring-2 ring-amber-400' : ''}`}
+          onClick={() => setBillingFilter((f) => (f === 'pending' ? 'all' : 'pending'))}
+          className={`bg-white p-4 rounded-lg shadow text-left hover:ring-2 hover:ring-amber-300 ${billingFilter === 'pending' ? 'ring-2 ring-amber-400' : ''}`}
         >
-          <p className="text-sm text-gray-500">À facturer</p><p className="text-2xl font-bold text-amber-600">{stats.aFacturer}</p>
+          <p className="text-sm text-gray-500">Devis / à facturer</p><p className="text-2xl font-bold text-amber-600">{stats.aTraiter}</p>
         </button>
         <button
           onClick={() => setBillingFilter((f) => (f === 'relances' ? 'all' : 'relances'))}
@@ -1020,6 +1030,7 @@ function MenuiserieManagement() {
         </select>
         <select value={billingFilter} onChange={(e) => setBillingFilter(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg">
           <option value="all">Toute facturation</option>
+          <option value="pending">À traiter (non facturé)</option>
           {Object.entries(BILLING_STATUS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           <option value="relances">Avec relances</option>
         </select>
