@@ -40,6 +40,18 @@ export const MENUISERIE_PHOTO_CATEGORIES = {
   autre: 'Autre',
 };
 
+// Sous-sections du module Menuiserie (onglets côté admin)
+export const MENUISERIE_CATEGORIES = {
+  petites_interventions: 'Petites interventions',
+  commande_portes: 'Commande de portes',
+};
+
+export const orderCategory = (order) =>
+  MENUISERIE_CATEGORIES[order?.category] ? order.category : 'petites_interventions';
+
+export const categoryLabel = (category) =>
+  MENUISERIE_CATEGORIES[category] || MENUISERIE_CATEGORIES.petites_interventions;
+
 // Statuts de facturation d'un bon — parcours de la secrétaire :
 // devis à faire -> devis fait -> à facturer -> facturé
 export const BILLING_STATUS = {

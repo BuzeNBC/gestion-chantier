@@ -11,6 +11,7 @@ import {
   newIntervention, computeOrderStatus, orderInterventions,
   BILLING_STATUS, BILLING_STATUS_STYLES, billingLabel,
   isOrderBillable, effectiveBillingStatus,
+  MENUISERIE_CATEGORIES, orderCategory, categoryLabel,
   relanceBadgeStyle, relanceBorderStyle, orderRelances, newRelance,
   orderTotalHt, fmtEuro,
 } from '../../services/menuiserieService';
@@ -66,7 +67,7 @@ const initialLinesFromOrder = (order) => {
 
 // `interventionOptions` = les tâches du corps d'état « Menuiserie ».
 // `chargeAffaireOptions` = liste des chargé(e)s d'affaire (table charge_affaires).
-const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOptions, onSubmit, onCancel }) => {
+const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOptions, defaultCategory, onSubmit, onCancel }) => {
   const [form, setForm] = useState(order ? {
     client_name: order.client_name || '',
     client_phone: order.client_phone || '',
@@ -77,7 +78,8 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
     reference: order.reference || '',
     bt_number: order.bt_number || '',
     charge_affaire: order.charge_affaire || '',
-  } : emptyForm);
+    category: orderCategory(order),
+  } : { ...emptyForm, category: defaultCategory || 'petites_interventions' });
   // Liste éditable d'interventions (cf. InterventionLinesEditor).
   const [interventionLines, setInterventionLines] = useState(() => initialLinesFromOrder(order));
   // Chargé d'affaire : possibilité d'en ajouter un nouveau.
@@ -277,6 +279,18 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
             placeholder="Ex: BM-2026-001"
           />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Sous-section</label>
+          <select
+            value={form.category}
+            onChange={(e) => set('category', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          >
+            {Object.entries(MENUISERIE_CATEGORIES).map(([v, l]) => (
+              <option key={v} value={v}>{l}</option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -762,6 +776,8 @@ function MenuiserieManagement() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [billingFilter, setBillingFilter] = useState('all');
+  // Sous-section active (onglet) : petites interventions / commande de portes
+  const [category, setCategory] = useState('petites_interventions');
 
   const loadData = useCallback(async () => {
     try {
@@ -896,7 +912,11 @@ function MenuiserieManagement() {
     }
   };
 
-  const filtered = orders.filter((o) => {
+  // Bons de la sous-section active : tout le reste (stats, filtres, export)
+  // travaille sur cette liste.
+  const categoryOrders = orders.filter((o) => orderCategory(o) === category);
+
+  const filtered = categoryOrders.filter((o) => {
     const term = search.toLowerCase();
     const ivs = orderInterventions(o);
     const matchesSearch =
@@ -935,7 +955,7 @@ function MenuiserieManagement() {
     return 0; // conserve l'ordre created_at desc de la requête
   });
 
-  const stats = orders.reduce(
+  const stats = categoryOrders.reduce(
     (acc, o) => {
       const s = computeOrderStatus(orderInterventions(o));
       acc.total++;
@@ -956,7 +976,7 @@ function MenuiserieManagement() {
   const typeFilterOptions = Array.from(
     new Set([
       ...interventionOptions,
-      ...orders.flatMap((o) => orderInterventions(o).map((iv) => iv.type)).filter(Boolean),
+      ...categoryOrders.flatMap((o) => orderInterventions(o).map((iv) => iv.type)).filter(Boolean),
     ])
   );
 
@@ -986,6 +1006,31 @@ function MenuiserieManagement() {
             <Plus className="h-5 w-5" /> Nouveau bon
           </button>
         </div>
+      </div>
+
+      {/* Sous-sections */}
+      <div className="flex gap-1 border-b border-gray-200">
+        {Object.entries(MENUISERIE_CATEGORIES).map(([value, label]) => {
+          const count = orders.filter((o) => orderCategory(o) === value).length;
+          return (
+            <button
+              key={value}
+              onClick={() => setCategory(value)}
+              className={`px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 -mb-px ${
+                category === value
+                  ? 'border-blue-600 text-blue-700 bg-blue-50'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              {label}
+              <span className={`ml-2 px-1.5 py-0.5 rounded-full text-xs ${
+                category === value ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
+              }`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Stats */}
@@ -1139,8 +1184,9 @@ function MenuiserieManagement() {
       </div>
 
       {modal.type === 'create' && (
-        <Modal title="Nouveau bon de menuiserie" onClose={() => setModal({ type: null })}>
+        <Modal title={`Nouveau bon — ${categoryLabel(category)}`} onClose={() => setModal({ type: null })}>
           <OrderForm
+            defaultCategory={category}
             menuisiers={menuisiers}
             interventionOptions={interventionOptions}
             chargeAffaireOptions={chargeAffaireOptions}
@@ -1185,8 +1231,8 @@ function MenuiserieManagement() {
         </Modal>
       )}
       {modal.type === 'export' && (
-        <Modal title="Export mensuel" onClose={() => setModal({ type: null })}>
-          <ExportForm orders={orders} onClose={() => setModal({ type: null })} />
+        <Modal title={`Export mensuel — ${categoryLabel(category)}`} onClose={() => setModal({ type: null })}>
+          <ExportForm orders={categoryOrders} onClose={() => setModal({ type: null })} />
         </Modal>
       )}
     </div>

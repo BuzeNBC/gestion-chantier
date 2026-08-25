@@ -334,6 +334,9 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
                     {order.bt_number && (
                       <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded">BT {order.bt_number}</span>
                     )}
+                    {order.category === 'commande_portes' && (
+                      <span className="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full">Commande de portes</span>
+                    )}
                     <span className={`px-2 py-0.5 rounded-full text-xs ${MENUISERIE_STATUS_STYLES[aggStatus] || ''}`}>
                       {statusLabel(aggStatus)}
                     </span>
