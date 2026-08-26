@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import {
   Plus, Edit, Trash, X, Search, Eye, MapPin, User, Calendar, FileText, Download,
-  Euro, Bell,
+  Euro, Bell, AlertTriangle,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { DBService, STORES, generateUUID } from '../../services/dbService';
@@ -11,7 +11,7 @@ import {
   newIntervention, computeOrderStatus, orderInterventions,
   BILLING_STATUS, BILLING_STATUS_STYLES, billingLabel,
   isOrderBillable, effectiveBillingStatus,
-  MENUISERIE_CATEGORIES, orderCategory, categoryLabel,
+  MENUISERIE_CATEGORIES, orderCategory, categoryLabel, compareOrders,
   relanceBadgeStyle, relanceBorderStyle, orderRelances, newRelance,
   orderTotalHt, fmtEuro,
 } from '../../services/menuiserieService';
@@ -45,6 +45,7 @@ const emptyForm = {
   reference: '',
   bt_number: '',
   charge_affaire: '',
+  is_urgent: false,
 };
 
 // Construit les `interventionLines` initiales du formulaire à partir d'un bon
@@ -79,6 +80,7 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
     bt_number: order.bt_number || '',
     charge_affaire: order.charge_affaire || '',
     category: orderCategory(order),
+    is_urgent: !!order.is_urgent,
   } : { ...emptyForm, category: defaultCategory || 'petites_interventions' });
   // Liste éditable d'interventions (cf. InterventionLinesEditor).
   const [interventionLines, setInterventionLines] = useState(() => initialLinesFromOrder(order));
@@ -164,6 +166,21 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
           />
         </div>
       </div>
+
+      <label className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border cursor-pointer ${
+        form.is_urgent ? 'bg-red-50 border-red-300' : 'bg-white border-gray-300 hover:bg-gray-50'
+      }`}>
+        <input
+          type="checkbox"
+          checked={form.is_urgent}
+          onChange={(e) => set('is_urgent', e.target.checked)}
+          className="h-4 w-4 text-red-600 border-gray-300 rounded"
+        />
+        <AlertTriangle className={`h-4 w-4 ${form.is_urgent ? 'text-red-600' : 'text-gray-400'}`} />
+        <span className={`text-sm font-medium ${form.is_urgent ? 'text-red-700' : 'text-gray-700'}`}>
+          Chantier urgent — remonte en rouge tout en haut de la liste
+        </span>
+      </label>
 
       <div>
         <label className="block text-sm font-medium mb-1">Adresse du chantier</label>
@@ -632,6 +649,11 @@ const OrderDetail = ({ order }) => {
           {pdfGenerating ? 'Génération…' : 'Rapport PDF'}
         </button>
       </div>
+    {order.is_urgent && (
+      <p className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm font-semibold text-red-700">
+        <AlertTriangle className="h-4 w-4" /> Chantier urgent
+      </p>
+    )}
     <div className="grid grid-cols-2 gap-3 text-sm">
       <div>
         <span className="text-gray-500">Statut :</span>{' '}
@@ -901,6 +923,22 @@ function MenuiserieManagement() {
     }
   };
 
+  // Bascule rapide du marquage « urgent » depuis la liste.
+  const toggleUrgent = async (order) => {
+    try {
+      const next = !order.is_urgent;
+      const { error } = await supabase
+        .from('menuiserie_orders')
+        .update({ is_urgent: next })
+        .eq('id', order.id);
+      if (error) throw error;
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, is_urgent: next } : o)));
+    } catch (error) {
+      console.error('Erreur marquage urgent:', error);
+      alert("Erreur lors du marquage urgent.");
+    }
+  };
+
   const handleDelete = async (id) => {
     if (!window.confirm('Supprimer définitivement ce bon de menuiserie ?')) return;
     try {
@@ -942,18 +980,9 @@ function MenuiserieManagement() {
     return matchesSearch && matchesStatus && matchesType && matchesBilling;
   });
 
-  // Les bons relancés remontent en haut : d'abord par nombre de relances
-  // (3 relances = plus urgent), puis par relance la plus récente, puis les
-  // autres par date de création (ordre d'origine de la requête).
-  const lastRelanceDate = (o) =>
-    orderRelances(o).reduce((max, r) => ((r.date || '') > max ? r.date : max), '');
-  const sortedOrders = [...filtered].sort((a, b) => {
-    const ra = orderRelances(a).length;
-    const rb = orderRelances(b).length;
-    if (ra !== rb) return rb - ra;
-    if (ra > 0) return lastRelanceDate(b).localeCompare(lastRelanceDate(a));
-    return 0; // conserve l'ordre created_at desc de la requête
-  });
+  // Tri partagé avec l'interface menuisier (cf. compareOrders) :
+  // urgents > relances > date prévue > date de création.
+  const sortedOrders = [...filtered].sort(compareOrders);
 
   const stats = categoryOrders.reduce(
     (acc, o) => {
@@ -1093,10 +1122,18 @@ function MenuiserieManagement() {
           const relances = orderRelances(order);
           const totalHt = orderTotalHt(order);
           const billing = effectiveBillingStatus(order);
+          const rowStyle = order.is_urgent
+            ? 'border-l-4 border-red-600 bg-red-50'
+            : relanceBorderStyle(relances.length);
           return (
-          <div key={order.id} className={`p-4 flex items-center justify-between gap-4 ${relanceBorderStyle(relances.length)}`}>
+          <div key={order.id} className={`p-4 flex items-center justify-between gap-4 ${rowStyle}`}>
             <div className="space-y-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
+                {order.is_urgent && (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-red-600 text-white">
+                    <AlertTriangle className="h-3 w-3" /> URGENT
+                  </span>
+                )}
                 <span className="font-semibold text-gray-800">{order.client_name || 'Client non renseigné'}</span>
                 {order.bt_number && (
                   <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded">BT {order.bt_number}</span>
@@ -1162,6 +1199,14 @@ function MenuiserieManagement() {
               </div>
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
+              <button
+                onClick={() => toggleUrgent(order)}
+                className={`p-2 rounded-lg ${order.is_urgent ? 'text-red-600 bg-red-100 hover:bg-red-200' : 'text-gray-400 hover:bg-gray-100 hover:text-red-600'}`}
+                aria-label={order.is_urgent ? "Retirer l'urgence" : 'Marquer urgent'}
+                title={order.is_urgent ? "Retirer l'urgence" : 'Marquer urgent'}
+              >
+                <AlertTriangle className="h-4 w-4" />
+              </button>
               <button onClick={() => setModal({ type: 'billing', data: order })} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg" aria-label="Facturation">
                 <Euro className="h-4 w-4" />
               </button>

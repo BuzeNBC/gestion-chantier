@@ -2,13 +2,14 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ArrowLeft, MapPin, Phone, User, Ruler, Camera, CheckCircle,
   Clock, Save, Trash2, ChevronRight, LogOut, FileText, X, Plus, Search,
+  AlertTriangle,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   MENUISERIE_STATUS, MENUISERIE_STATUS_STYLES, MENUISERIE_PHOTO_CATEGORIES,
   typeLabel, statusLabel, computeOrderStatus, orderInterventions, newIntervention,
-  findMenuiserieTrade,
+  findMenuiserieTrade, compareOrders,
 } from '../../services/menuiserieService';
 import { generateMenuiseriePdf, openOrDownloadPdf } from '../../services/menuiseriePdf';
 import PhotoUploadButton from '../PhotoUploadButton';
@@ -69,7 +70,9 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
         .join(' ')
         .toLowerCase();
       return haystack.includes(term);
-    });
+    })
+      // Même tri que la liste admin : urgents > relances > date prévue.
+      .sort(compareOrders);
   }, [orders, search, statusFilter]);
 
   const loadData = useCallback(async () => {
@@ -324,10 +327,17 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
               <button
                 key={order.id}
                 onClick={() => setSelectedOrderId(order.id)}
-                className="w-full bg-white rounded-lg shadow p-4 flex items-center justify-between text-left hover:shadow-md transition-shadow"
+                className={`w-full rounded-lg shadow p-4 flex items-center justify-between text-left hover:shadow-md transition-shadow ${
+                  order.is_urgent ? 'bg-red-50 border-l-4 border-red-600' : 'bg-white'
+                }`}
               >
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
+                    {order.is_urgent && (
+                      <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-red-600 text-white">
+                        <AlertTriangle className="h-3 w-3" /> URGENT
+                      </span>
+                    )}
                     <span className="font-semibold text-gray-800">
                       {order.client_name || 'Client non renseigné'}
                     </span>
@@ -541,6 +551,11 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+        {selectedOrder.is_urgent && (
+          <p className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-lg text-sm font-bold">
+            <AlertTriangle className="h-5 w-5" /> CHANTIER URGENT
+          </p>
+        )}
         {/* Infos client (lecture seule) */}
         <section className="bg-white rounded-lg shadow p-5 space-y-2">
           <h2 className="font-semibold text-gray-800 mb-2">Détails</h2>

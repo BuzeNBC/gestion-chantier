@@ -110,6 +110,30 @@ export const relanceBorderStyle = (count) => {
 
 export const orderRelances = (order) => (Array.isArray(order?.relances) ? order.relances : []);
 
+// Date de la relance la plus récente d'un bon ('' si aucune).
+export const lastRelanceDate = (order) =>
+  orderRelances(order).reduce((max, r) => ((r.date || '') > max ? r.date : max), '');
+
+// Tri UNIQUE des bons, utilisé à l'identique côté admin et côté menuisier :
+//   1. les chantiers urgents tout en haut
+//   2. puis les bons relancés (les plus relancés d'abord, puis relance la plus récente)
+//   3. puis par date prévue croissante (les bons sans date en dessous)
+//   4. à égalité, les bons créés le plus récemment d'abord
+export const compareOrders = (a, b) => {
+  if (!!a.is_urgent !== !!b.is_urgent) return a.is_urgent ? -1 : 1;
+  const ra = orderRelances(a).length;
+  const rb = orderRelances(b).length;
+  if (ra !== rb) return rb - ra;
+  if (ra > 0) {
+    const cmp = lastRelanceDate(b).localeCompare(lastRelanceDate(a));
+    if (cmp !== 0) return cmp;
+  }
+  const sa = a.scheduled_date || '9999-12-31';
+  const sb = b.scheduled_date || '9999-12-31';
+  if (sa !== sb) return sa.localeCompare(sb);
+  return (b.created_at || '').localeCompare(a.created_at || '');
+};
+
 export const newRelance = () => ({
   id: typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : (
     'rl-' + Math.random().toString(36).slice(2) + Date.now().toString(36)
