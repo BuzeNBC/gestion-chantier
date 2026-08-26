@@ -9,7 +9,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import {
   MENUISERIE_STATUS, MENUISERIE_STATUS_STYLES, MENUISERIE_PHOTO_CATEGORIES,
   typeLabel, statusLabel, computeOrderStatus, orderInterventions, newIntervention,
-  findMenuiserieTrade, compareOrders,
+  findMenuiserieTrade, compareOrders, orderReceivedDate,
 } from '../../services/menuiserieService';
 import { generateMenuiseriePdf, openOrDownloadPdf } from '../../services/menuiseriePdf';
 import PhotoUploadButton from '../PhotoUploadButton';
@@ -359,11 +359,15 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
                       <MapPin className="h-3.5 w-3.5" /> {order.address}
                     </p>
                   )}
-                  {order.scheduled_date && (
-                    <p className="text-xs text-gray-400">
-                      Prévu le {new Date(order.scheduled_date).toLocaleDateString('fr-FR')}
-                    </p>
-                  )}
+                  <p className="text-xs text-gray-400">
+                    {orderReceivedDate(order) && (
+                      <>Reçu le {new Date(orderReceivedDate(order)).toLocaleDateString('fr-FR')}</>
+                    )}
+                    {orderReceivedDate(order) && order.scheduled_date && ' · '}
+                    {order.scheduled_date && (
+                      <>Prévu le {new Date(order.scheduled_date).toLocaleDateString('fr-FR')}</>
+                    )}
+                  </p>
                 </div>
                 <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0" />
               </button>
@@ -574,13 +578,16 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
               <MapPin className="h-4 w-4 text-gray-400" /> {selectedOrder.address}
             </p>
           )}
-          {(selectedOrder.charge_affaire || selectedOrder.bt_number) && (
+          {(selectedOrder.charge_affaire || selectedOrder.bt_number || orderReceivedDate(selectedOrder)) && (
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-700 pt-2 border-t mt-2">
               {selectedOrder.charge_affaire && (
                 <span><span className="text-gray-500">CA :</span> {selectedOrder.charge_affaire}</span>
               )}
               {selectedOrder.bt_number && (
                 <span><span className="text-gray-500">N° de BT :</span> {selectedOrder.bt_number}</span>
+              )}
+              {orderReceivedDate(selectedOrder) && (
+                <span><span className="text-gray-500">Reçu le :</span> {new Date(orderReceivedDate(selectedOrder)).toLocaleDateString('fr-FR')}</span>
               )}
             </div>
           )}

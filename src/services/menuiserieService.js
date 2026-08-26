@@ -114,10 +114,15 @@ export const orderRelances = (order) => (Array.isArray(order?.relances) ? order.
 export const lastRelanceDate = (order) =>
   orderRelances(order).reduce((max, r) => ((r.date || '') > max ? r.date : max), '');
 
+// Date de réception d'un bon, avec repli sur la date de création pour les
+// bons antérieurs à l'ajout du champ.
+export const orderReceivedDate = (order) =>
+  order?.received_date || (order?.created_at || '').slice(0, 10) || '';
+
 // Tri UNIQUE des bons, utilisé à l'identique côté admin et côté menuisier :
 //   1. les chantiers urgents tout en haut
 //   2. puis les bons relancés (les plus relancés d'abord, puis relance la plus récente)
-//   3. puis par date prévue croissante (les bons sans date en dessous)
+//   3. puis par date de réception croissante (le plus ancien reçu en premier)
 //   4. à égalité, les bons créés le plus récemment d'abord
 export const compareOrders = (a, b) => {
   if (!!a.is_urgent !== !!b.is_urgent) return a.is_urgent ? -1 : 1;
@@ -128,9 +133,9 @@ export const compareOrders = (a, b) => {
     const cmp = lastRelanceDate(b).localeCompare(lastRelanceDate(a));
     if (cmp !== 0) return cmp;
   }
-  const sa = a.scheduled_date || '9999-12-31';
-  const sb = b.scheduled_date || '9999-12-31';
-  if (sa !== sb) return sa.localeCompare(sb);
+  const da = orderReceivedDate(a) || '9999-12-31';
+  const db = orderReceivedDate(b) || '9999-12-31';
+  if (da !== db) return da.localeCompare(db);
   return (b.created_at || '').localeCompare(a.created_at || '');
 };
 

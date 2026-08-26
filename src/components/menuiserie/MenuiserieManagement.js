@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import {
   Plus, Edit, Trash, X, Search, Eye, MapPin, User, Calendar, FileText, Download,
-  Euro, Bell, AlertTriangle,
+  Euro, Bell, AlertTriangle, Inbox,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { DBService, STORES, generateUUID } from '../../services/dbService';
@@ -11,7 +11,7 @@ import {
   newIntervention, computeOrderStatus, orderInterventions,
   BILLING_STATUS, BILLING_STATUS_STYLES, billingLabel,
   isOrderBillable, effectiveBillingStatus,
-  MENUISERIE_CATEGORIES, orderCategory, categoryLabel, compareOrders,
+  MENUISERIE_CATEGORIES, orderCategory, categoryLabel, compareOrders, orderReceivedDate,
   relanceBadgeStyle, relanceBorderStyle, orderRelances, newRelance,
   orderTotalHt, fmtEuro,
 } from '../../services/menuiserieService';
@@ -46,6 +46,7 @@ const emptyForm = {
   bt_number: '',
   charge_affaire: '',
   is_urgent: false,
+  received_date: '',
 };
 
 // Construit les `interventionLines` initiales du formulaire à partir d'un bon
@@ -81,7 +82,13 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
     charge_affaire: order.charge_affaire || '',
     category: orderCategory(order),
     is_urgent: !!order.is_urgent,
-  } : { ...emptyForm, category: defaultCategory || 'petites_interventions' });
+    received_date: order.received_date || '',
+  } : {
+    ...emptyForm,
+    category: defaultCategory || 'petites_interventions',
+    // Par défaut, le bon est reçu aujourd'hui.
+    received_date: new Date().toISOString().slice(0, 10),
+  });
   // Liste éditable d'interventions (cf. InterventionLinesEditor).
   const [interventionLines, setInterventionLines] = useState(() => initialLinesFromOrder(order));
   // Chargé d'affaire : possibilité d'en ajouter un nouveau.
@@ -132,6 +139,7 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
       charge_affaire: effectiveCA || null,
       assigned_to: form.assigned_to || null,
       scheduled_date: form.scheduled_date || null,
+      received_date: form.received_date || null,
       reference: form.reference || null,
       bt_number: form.bt_number || null,
       // Tâches à ajouter au corps d'état Menuiserie
@@ -226,6 +234,16 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
             onChange={(e) => set('scheduled_date', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
           />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Date de réception du bon</label>
+          <input
+            type="date"
+            value={form.received_date || ''}
+            onChange={(e) => set('received_date', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          />
+          <p className="text-xs text-gray-500 mt-1">Sert au tri : le plus ancien reçu passe en premier.</p>
         </div>
       </div>
 
@@ -671,6 +689,9 @@ const OrderDetail = ({ order }) => {
       )}
       {order.scheduled_date && (
         <div><span className="text-gray-500">Prévu :</span> {new Date(order.scheduled_date).toLocaleDateString('fr-FR')}</div>
+      )}
+      {orderReceivedDate(order) && (
+        <div><span className="text-gray-500">Reçu le :</span> {new Date(orderReceivedDate(order)).toLocaleDateString('fr-FR')}</div>
       )}
       <div>
         <span className="text-gray-500">Facturation :</span>{' '}
@@ -1179,6 +1200,12 @@ function MenuiserieManagement() {
                 )}
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
+                {orderReceivedDate(order) && (
+                  <span className="flex items-center gap-1">
+                    <Inbox className="h-3.5 w-3.5" />
+                    Reçu le {new Date(orderReceivedDate(order)).toLocaleDateString('fr-FR')}
+                  </span>
+                )}
                 {order.address && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{order.address}</span>}
                 <span className="flex items-center gap-1">
                   <User className="h-3.5 w-3.5" />

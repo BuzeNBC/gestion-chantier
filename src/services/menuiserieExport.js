@@ -1,7 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import {
   typeLabel, statusLabel, orderInterventions, billingLabel, orderRelances,
-  effectiveBillingStatus,
+  effectiveBillingStatus, orderReceivedDate,
 } from './menuiserieService';
 
 // =============================================================================
@@ -52,6 +52,7 @@ export const collectMonthRows = (orders, yearMonth, statuses = null) => {
         status: statusLabel(iv.status),
         rawStatus: iv.status,
         scheduled: order.scheduled_date || '',
+        received: orderReceivedDate(order) || '',
         completed: iv.completed_date || '',
         measurementsCount: (iv.measurements || []).length,
         photosCount: (iv.photos || []).length,
@@ -94,7 +95,7 @@ export const exportMonthCsv = (orders, yearMonth, statuses = null) => {
   };
   const header = [
     'Mois', 'Adresse', 'Client', 'Téléphone', 'N° de BT', 'Chargé d\'affaire',
-    'Menuisier', 'Référence', 'Date', 'Date prévue', 'Date réalisation',
+    'Menuisier', 'Référence', 'Date', 'Date réception', 'Date prévue', 'Date réalisation',
     'Intervention', 'Statut', 'Prix HT (€)', 'Facturation', 'Relances',
     'Nb cotes', 'Nb photos', 'Notes',
   ];
@@ -110,6 +111,7 @@ export const exportMonthCsv = (orders, yearMonth, statuses = null) => {
       esc(r.menuisier),
       esc(r.reference),
       fmtDate(r.date),
+      fmtDate(r.received),
       fmtDate(r.scheduled),
       fmtDate(r.completed),
       esc(r.type),
