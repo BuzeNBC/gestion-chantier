@@ -12,6 +12,7 @@ import {
   BILLING_STATUS, BILLING_STATUS_STYLES, billingLabel,
   isOrderBillable, effectiveBillingStatus,
   MENUISERIE_CATEGORIES, orderCategory, categoryLabel, compareOrders, orderReceivedDate,
+  sortInterventionOptions,
   relanceBadgeStyle, relanceBorderStyle, orderRelances, newRelance,
   orderTotalHt, fmtEuro,
 } from '../../services/menuiserieService';
@@ -847,7 +848,7 @@ function MenuiserieManagement() {
       // Les types d'intervention proviennent des tâches du corps d'état « Menuiserie »
       const trade = findMenuiserieTrade(tradesRes.data || []);
       setMenuiserieTrade(trade);
-      setInterventionOptions(trade?.tasks || []);
+      setInterventionOptions(sortInterventionOptions(trade?.tasks || []));
     } catch (error) {
       console.error('Erreur chargement menuiserie:', error);
     } finally {
@@ -1023,12 +1024,12 @@ function MenuiserieManagement() {
 
   // Options du filtre « type » : tâches du corps d'état + types présents dans
   // les interventions des bons (au cas où une tâche aurait été renommée/supprimée).
-  const typeFilterOptions = Array.from(
+  const typeFilterOptions = sortInterventionOptions(Array.from(
     new Set([
       ...interventionOptions,
       ...categoryOrders.flatMap((o) => orderInterventions(o).map((iv) => iv.type)).filter(Boolean),
     ])
-  );
+  ));
 
   if (isLoading) {
     return (

@@ -170,6 +170,12 @@ export const typeLabel = (type) => {
   return MENUISERIE_TYPES[type] || type;
 };
 
+// Trie les types d'intervention par ordre alphabétique français (insensible
+// à la casse et aux accents). Utilisé pour tous les menus déroulants : une
+// nouvelle intervention ajoutée à la volée se reclasse automatiquement.
+export const sortInterventionOptions = (options = []) =>
+  [...options].sort((a, b) => String(a).localeCompare(String(b), 'fr', { sensitivity: 'base' }));
+
 // Détecte le corps d'état « Menuiserie » parmi une liste de corps d'état.
 // L'app n'en a qu'un seul ; on le repère par son nom (insensible à la casse).
 export const findMenuiserieTrade = (trades = []) =>

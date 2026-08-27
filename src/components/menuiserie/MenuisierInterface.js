@@ -9,7 +9,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import {
   MENUISERIE_STATUS, MENUISERIE_STATUS_STYLES, MENUISERIE_PHOTO_CATEGORIES,
   typeLabel, statusLabel, computeOrderStatus, orderInterventions, newIntervention,
-  findMenuiserieTrade, compareOrders, orderReceivedDate,
+  findMenuiserieTrade, compareOrders, orderReceivedDate, sortInterventionOptions,
 } from '../../services/menuiserieService';
 import { generateMenuiseriePdf, openOrDownloadPdf } from '../../services/menuiseriePdf';
 import PhotoUploadButton from '../PhotoUploadButton';
@@ -95,7 +95,7 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
       if (tradesRes.error) throw tradesRes.error;
       setOrders(ordersRes.data || []);
       const trade = findMenuiserieTrade(tradesRes.data || []);
-      setInterventionOptions(trade?.tasks || []);
+      setInterventionOptions(sortInterventionOptions(trade?.tasks || []));
     } catch (error) {
       console.error('Erreur chargement bons menuiserie:', error);
     } finally {
