@@ -1,5 +1,6 @@
 import React from 'react';
 import { Plus, Trash2 } from 'lucide-react';
+import { sortInterventionOptions } from '../../services/menuiserieService';
 
 // Éditeur des lignes d'intervention dans le formulaire admin "Nouveau bon".
 // Une ligne = un choix de type (dropdown depuis le corps d'état Menuiserie),
@@ -38,9 +39,10 @@ function InterventionLinesEditor({ lines, onChange, interventionOptions }) {
       )}
 
       {lines.map((line, idx) => {
-        // Préserver le type déjà choisi si entre-temps il n'est plus dans la liste
+        // Préserver le type déjà choisi si entre-temps il n'est plus dans la
+        // liste, en le reclassant à sa place alphabétique.
         const choices = line.type && !interventionOptions.includes(line.type)
-          ? [line.type, ...interventionOptions]
+          ? sortInterventionOptions([line.type, ...interventionOptions])
           : interventionOptions;
         return (
           <div key={line.lineId} className="border border-gray-200 rounded-lg p-3 space-y-2 bg-gray-50">
