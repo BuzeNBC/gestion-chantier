@@ -194,6 +194,15 @@ export async function generateMenuiseriePdf(order) {
     });
     y -= 30;
 
+    // Date d'intervention renseignée par le menuisier
+    if (iv.intervention_date) {
+      page.drawText(
+        cleanText(`Date d'intervention : ${new Date(iv.intervention_date).toLocaleDateString('fr-FR')}`),
+        { x: MARGIN, y, size: 10, font: helveticaBold, color: textColor },
+      );
+      y -= 18;
+    }
+
     // Cotes
     const measurements = Array.isArray(iv.measurements) ? iv.measurements : [];
     if (measurements.length > 0) {

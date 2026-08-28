@@ -769,6 +769,11 @@ const OrderDetail = ({ order }) => {
               </span>
             </div>
           </div>
+          {iv.intervention_date && (
+            <p className="text-xs text-gray-600 font-medium">
+              Date d'intervention : {new Date(iv.intervention_date).toLocaleDateString('fr-FR')}
+            </p>
+          )}
           {iv.completed_date && (
             <p className="text-xs text-gray-500">Réalisé le {new Date(iv.completed_date).toLocaleDateString('fr-FR')}</p>
           )}
@@ -973,8 +978,14 @@ function MenuiserieManagement() {
   };
 
   // Bons de la sous-section active : tout le reste (stats, filtres, export)
-  // travaille sur cette liste.
-  const categoryOrders = orders.filter((o) => orderCategory(o) === category);
+  // travaille sur cette liste. Les bons terminés quittent leur sous-section
+  // pour rejoindre l'onglet « Terminés » (toutes catégories confondues).
+  const isCompleted = (o) => computeOrderStatus(orderInterventions(o)) === 'completed';
+  const categoryOrders = orders.filter((o) =>
+    category === 'termines'
+      ? isCompleted(o)
+      : orderCategory(o) === category && !isCompleted(o)
+  );
 
   const filtered = categoryOrders.filter((o) => {
     const term = search.toLowerCase();
@@ -1060,22 +1071,28 @@ function MenuiserieManagement() {
       </div>
 
       {/* Sous-sections */}
-      <div className="flex gap-1 border-b border-gray-200">
-        {Object.entries(MENUISERIE_CATEGORIES).map(([value, label]) => {
-          const count = orders.filter((o) => orderCategory(o) === value).length;
+      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
+        {[...Object.entries(MENUISERIE_CATEGORIES), ['termines', 'Terminés']].map(([value, label]) => {
+          const count = value === 'termines'
+            ? orders.filter(isCompleted).length
+            : orders.filter((o) => orderCategory(o) === value && !isCompleted(o)).length;
+          const active = category === value;
+          const activeStyle = value === 'termines'
+            ? 'border-green-600 text-green-700 bg-green-50'
+            : 'border-blue-600 text-blue-700 bg-blue-50';
           return (
             <button
               key={value}
               onClick={() => setCategory(value)}
-              className={`px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 -mb-px ${
-                category === value
-                  ? 'border-blue-600 text-blue-700 bg-blue-50'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+              className={`px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 -mb-px whitespace-nowrap ${
+                active ? activeStyle : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
               }`}
             >
               {label}
               <span className={`ml-2 px-1.5 py-0.5 rounded-full text-xs ${
-                category === value ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
+                active
+                  ? (value === 'termines' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700')
+                  : 'bg-gray-100 text-gray-600'
               }`}>
                 {count}
               </span>
@@ -1159,6 +1176,11 @@ function MenuiserieManagement() {
                 <span className="font-semibold text-gray-800">{order.client_name || 'Client non renseigné'}</span>
                 {order.bt_number && (
                   <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded">BT {order.bt_number}</span>
+                )}
+                {category === 'termines' && (
+                  <span className="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full">
+                    {categoryLabel(orderCategory(order))}
+                  </span>
                 )}
                 {order.reference && <span className="text-xs text-gray-400">({order.reference})</span>}
                 <span className={`px-2 py-0.5 rounded-full text-xs ${MENUISERIE_STATUS_STYLES[aggregatedStatus] || ''}`}>
@@ -1257,9 +1279,9 @@ function MenuiserieManagement() {
       </div>
 
       {modal.type === 'create' && (
-        <Modal title={`Nouveau bon — ${categoryLabel(category)}`} onClose={() => setModal({ type: null })}>
+        <Modal title={`Nouveau bon — ${category === 'termines' ? 'Menuiserie' : categoryLabel(category)}`} onClose={() => setModal({ type: null })}>
           <OrderForm
-            defaultCategory={category}
+            defaultCategory={category === 'termines' ? 'petites_interventions' : category}
             menuisiers={menuisiers}
             interventionOptions={interventionOptions}
             chargeAffaireOptions={chargeAffaireOptions}
@@ -1304,7 +1326,7 @@ function MenuiserieManagement() {
         </Modal>
       )}
       {modal.type === 'export' && (
-        <Modal title={`Export mensuel — ${categoryLabel(category)}`} onClose={() => setModal({ type: null })}>
+        <Modal title={`Export mensuel — ${category === 'termines' ? 'Terminés' : categoryLabel(category)}`} onClose={() => setModal({ type: null })}>
           <ExportForm orders={categoryOrders} onClose={() => setModal({ type: null })} />
         </Modal>
       )}

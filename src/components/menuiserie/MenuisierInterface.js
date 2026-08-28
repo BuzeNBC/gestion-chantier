@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ArrowLeft, MapPin, Phone, User, Ruler, Camera, CheckCircle,
   Clock, Save, Trash2, ChevronRight, LogOut, FileText, X, Plus, Search,
-  AlertTriangle,
+  AlertTriangle, Calendar,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -10,6 +10,7 @@ import {
   MENUISERIE_STATUS, MENUISERIE_STATUS_STYLES, MENUISERIE_PHOTO_CATEGORIES,
   typeLabel, statusLabel, computeOrderStatus, orderInterventions, newIntervention,
   findMenuiserieTrade, compareOrders, orderReceivedDate, sortInterventionOptions,
+  MENUISERIE_CATEGORIES, orderCategory,
 } from '../../services/menuiserieService';
 import { generateMenuiseriePdf, openOrDownloadPdf } from '../../services/menuiseriePdf';
 import PhotoUploadButton from '../PhotoUploadButton';
@@ -44,6 +45,9 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
   // Recherche + filtre statut (uniquement sur la liste des bons)
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  // Sous-section active, comme côté admin : petites interventions /
+  // commande de portes / terminés (les bons terminés quittent leur sous-section)
+  const [tab, setTab] = useState('petites_interventions');
 
   const selectedOrder = orders.find((o) => o.id === selectedOrderId) || null;
 
@@ -55,6 +59,12 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
     return orders.filter((o) => {
       const ivs = orderInterventions(o);
       const aggStatus = computeOrderStatus(ivs);
+      // Sous-section : un bon terminé n'apparaît que dans l'onglet « Terminés »
+      if (tab === 'termines') {
+        if (aggStatus !== 'completed') return false;
+      } else {
+        if (orderCategory(o) !== tab || aggStatus === 'completed') return false;
+      }
       if (statusFilter !== 'all' && aggStatus !== statusFilter) return false;
       if (!term) return true;
       const haystack = [
@@ -71,9 +81,9 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
         .toLowerCase();
       return haystack.includes(term);
     })
-      // Même tri que la liste admin : urgents > relances > date prévue.
+      // Même tri que la liste admin : urgents > relances > date de réception.
       .sort(compareOrders);
-  }, [orders, search, statusFilter]);
+  }, [orders, search, statusFilter, tab]);
 
   const loadData = useCallback(async () => {
     if (!user) return;
@@ -265,6 +275,38 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
         )}
 
         <main className="max-w-3xl mx-auto px-4 py-6 space-y-3">
+          {/* Sous-sections, comme côté admin */}
+          <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
+            {[...Object.entries(MENUISERIE_CATEGORIES), ['termines', 'Terminés']].map(([value, label]) => {
+              const count = orders.filter((o) => {
+                const done = computeOrderStatus(orderInterventions(o)) === 'completed';
+                return value === 'termines' ? done : orderCategory(o) === value && !done;
+              }).length;
+              const active = tab === value;
+              const activeStyle = value === 'termines'
+                ? 'border-green-600 text-green-700 bg-green-50'
+                : 'border-blue-600 text-blue-700 bg-blue-50';
+              return (
+                <button
+                  key={value}
+                  onClick={() => setTab(value)}
+                  className={`px-3 py-2 text-sm font-medium rounded-t-lg border-b-2 -mb-px whitespace-nowrap ${
+                    active ? activeStyle : 'border-transparent text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {label}
+                  <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-xs ${
+                    active
+                      ? (value === 'termines' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700')
+                      : 'bg-gray-100 text-gray-600'
+                  }`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
           {/* Barre de recherche + filtre statut */}
           {orders.length > 0 && (
             <div className="flex flex-wrap gap-2">
@@ -315,7 +357,9 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
 
           {orders.length > 0 && filteredOrders.length === 0 && (
             <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500 text-sm">
-              Aucun bon ne correspond à ta recherche.
+              {search || statusFilter !== 'all'
+                ? 'Aucun bon ne correspond à ta recherche.'
+                : 'Aucun bon dans cette sous-section.'}
             </div>
           )}
 
@@ -461,6 +505,22 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
                 ))}
               </div>
             )}
+          </section>
+
+          {/* Date d'intervention */}
+          <section className="bg-white rounded-lg shadow p-5">
+            <h2 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-gray-400" /> Date d'intervention
+            </h2>
+            <input
+              type="date"
+              value={draftIv.intervention_date || ''}
+              onChange={(e) => setDraftIv((d) => ({ ...d, intervention_date: e.target.value || null }))}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Date à laquelle l'intervention a été (ou sera) réalisée — reprise dans le rapport PDF.
+            </p>
           </section>
 
           {/* Notes */}
