@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import {
   Plus, Edit, Trash, X, Search, Eye, MapPin, User, Calendar, FileText, Download,
-  Euro, Bell, AlertTriangle, Inbox,
+  Euro, Bell, AlertTriangle, Inbox, BadgeCheck,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { DBService, STORES, generateUUID } from '../../services/dbService';
@@ -12,7 +12,7 @@ import {
   BILLING_STATUS, BILLING_STATUS_STYLES, billingLabel,
   isOrderBillable, effectiveBillingStatus,
   MENUISERIE_CATEGORIES, orderCategory, categoryLabel, compareOrders, orderReceivedDate,
-  sortInterventionOptions,
+  sortInterventionOptions, MENUISERIE_TABS, orderMatchesTab,
   relanceBadgeStyle, relanceBorderStyle, orderRelances, newRelance,
   orderTotalHt, fmtEuro,
 } from '../../services/menuiserieService';
@@ -36,6 +36,9 @@ const Modal = memo(({ title, onClose, children, wide = false }) => (
   </div>
 ));
 
+// Libellé d'un onglet (sous-sections + Portes validées + Terminés).
+const tabLabel = (tab) => (MENUISERIE_TABS.find(([v]) => v === tab) || [])[1] || tab;
+
 const emptyForm = {
   client_name: '',
   client_phone: '',
@@ -48,6 +51,8 @@ const emptyForm = {
   charge_affaire: '',
   is_urgent: false,
   received_date: '',
+  devis_valide: false,
+  devis_valide_date: '',
 };
 
 // Construit les `interventionLines` initiales du formulaire à partir d'un bon
@@ -70,7 +75,7 @@ const initialLinesFromOrder = (order) => {
 
 // `interventionOptions` = les tâches du corps d'état « Menuiserie ».
 // `chargeAffaireOptions` = liste des chargé(e)s d'affaire (table charge_affaires).
-const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOptions, defaultCategory, onSubmit, onCancel }) => {
+const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOptions, defaultCategory, defaultDevisValide = false, onSubmit, onCancel }) => {
   const [form, setForm] = useState(order ? {
     client_name: order.client_name || '',
     client_phone: order.client_phone || '',
@@ -84,9 +89,12 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
     category: orderCategory(order),
     is_urgent: !!order.is_urgent,
     received_date: order.received_date || '',
+    devis_valide: !!order.devis_valide,
+    devis_valide_date: order.devis_valide_date || '',
   } : {
     ...emptyForm,
     category: defaultCategory || 'petites_interventions',
+    devis_valide: !!defaultDevisValide,
     // Par défaut, le bon est reçu aujourd'hui.
     received_date: new Date().toISOString().slice(0, 10),
   });
@@ -141,6 +149,11 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
       assigned_to: form.assigned_to || null,
       scheduled_date: form.scheduled_date || null,
       received_date: form.received_date || null,
+      // La validation du devis ne concerne que les commandes de portes.
+      devis_valide: form.category === 'commande_portes' ? form.devis_valide : false,
+      devis_valide_date: form.category === 'commande_portes' && form.devis_valide
+        ? (form.devis_valide_date || new Date().toISOString().slice(0, 10))
+        : null,
       reference: form.reference || null,
       bt_number: form.bt_number || null,
       // Tâches à ajouter au corps d'état Menuiserie
@@ -329,6 +342,23 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
           </select>
         </div>
       </div>
+
+      {form.category === 'commande_portes' && (
+        <label className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border cursor-pointer ${
+          form.devis_valide ? 'bg-teal-50 border-teal-300' : 'bg-white border-gray-300 hover:bg-gray-50'
+        }`}>
+          <input
+            type="checkbox"
+            checked={form.devis_valide}
+            onChange={(e) => set('devis_valide', e.target.checked)}
+            className="h-4 w-4 text-teal-600 border-gray-300 rounded"
+          />
+          <BadgeCheck className={`h-4 w-4 ${form.devis_valide ? 'text-teal-600' : 'text-gray-400'}`} />
+          <span className={`text-sm font-medium ${form.devis_valide ? 'text-teal-700' : 'text-gray-700'}`}>
+            Devis validé — la commande passe dans « Portes validées » (production)
+          </span>
+        </label>
+      )}
 
       <div>
         <label className="block text-sm font-medium mb-2">Interventions *</label>
@@ -694,6 +724,18 @@ const OrderDetail = ({ order }) => {
       {orderReceivedDate(order) && (
         <div><span className="text-gray-500">Reçu le :</span> {new Date(orderReceivedDate(order)).toLocaleDateString('fr-FR')}</div>
       )}
+      {orderCategory(order) === 'commande_portes' && (
+        <div>
+          <span className="text-gray-500">Devis :</span>{' '}
+          {order.devis_valide ? (
+            <span className="px-2 py-0.5 rounded-full text-xs bg-teal-100 text-teal-800 font-semibold">
+              Validé{order.devis_valide_date ? ` le ${new Date(order.devis_valide_date).toLocaleDateString('fr-FR')}` : ''}
+            </span>
+          ) : (
+            <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">En attente de validation</span>
+          )}
+        </div>
+      )}
       <div>
         <span className="text-gray-500">Facturation :</span>{' '}
         {effectiveBillingStatus(order) ? (
@@ -950,6 +992,27 @@ function MenuiserieManagement() {
     }
   };
 
+  // Bascule rapide « devis validé » pour une commande de portes : elle passe
+  // de « Commande de portes » (en attente) à « Portes validées » (production).
+  const toggleDevisValide = async (order) => {
+    try {
+      const next = !order.devis_valide;
+      const patch = {
+        devis_valide: next,
+        devis_valide_date: next ? new Date().toISOString().slice(0, 10) : null,
+      };
+      const { error } = await supabase
+        .from('menuiserie_orders')
+        .update(patch)
+        .eq('id', order.id);
+      if (error) throw error;
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, ...patch } : o)));
+    } catch (error) {
+      console.error('Erreur validation devis:', error);
+      alert('Erreur lors de la validation du devis.');
+    }
+  };
+
   // Bascule rapide du marquage « urgent » depuis la liste.
   const toggleUrgent = async (order) => {
     try {
@@ -977,15 +1040,10 @@ function MenuiserieManagement() {
     }
   };
 
-  // Bons de la sous-section active : tout le reste (stats, filtres, export)
-  // travaille sur cette liste. Les bons terminés quittent leur sous-section
-  // pour rejoindre l'onglet « Terminés » (toutes catégories confondues).
-  const isCompleted = (o) => computeOrderStatus(orderInterventions(o)) === 'completed';
-  const categoryOrders = orders.filter((o) =>
-    category === 'termines'
-      ? isCompleted(o)
-      : orderCategory(o) === category && !isCompleted(o)
-  );
+  // Bons de l'onglet actif : tout le reste (stats, filtres, export) travaille
+  // sur cette liste. Le découpage (terminés à part, portes validées ou en
+  // attente de devis) est partagé avec l'interface menuisier.
+  const categoryOrders = orders.filter((o) => orderMatchesTab(o, category));
 
   const filtered = categoryOrders.filter((o) => {
     const term = search.toLowerCase();
@@ -1072,14 +1130,19 @@ function MenuiserieManagement() {
 
       {/* Sous-sections */}
       <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
-        {[...Object.entries(MENUISERIE_CATEGORIES), ['termines', 'Terminés']].map(([value, label]) => {
-          const count = value === 'termines'
-            ? orders.filter(isCompleted).length
-            : orders.filter((o) => orderCategory(o) === value && !isCompleted(o)).length;
+        {MENUISERIE_TABS.map(([value, label]) => {
+          const count = orders.filter((o) => orderMatchesTab(o, value)).length;
           const active = category === value;
           const activeStyle = value === 'termines'
             ? 'border-green-600 text-green-700 bg-green-50'
-            : 'border-blue-600 text-blue-700 bg-blue-50';
+            : value === 'portes_validees'
+              ? 'border-teal-600 text-teal-700 bg-teal-50'
+              : 'border-blue-600 text-blue-700 bg-blue-50';
+          const activeBadge = value === 'termines'
+            ? 'bg-green-100 text-green-700'
+            : value === 'portes_validees'
+              ? 'bg-teal-100 text-teal-700'
+              : 'bg-blue-100 text-blue-700';
           return (
             <button
               key={value}
@@ -1090,9 +1153,7 @@ function MenuiserieManagement() {
             >
               {label}
               <span className={`ml-2 px-1.5 py-0.5 rounded-full text-xs ${
-                active
-                  ? (value === 'termines' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700')
-                  : 'bg-gray-100 text-gray-600'
+                active ? activeBadge : 'bg-gray-100 text-gray-600'
               }`}>
                 {count}
               </span>
@@ -1182,6 +1243,18 @@ function MenuiserieManagement() {
                     {categoryLabel(orderCategory(order))}
                   </span>
                 )}
+                {orderCategory(order) === 'commande_portes' && (
+                  order.devis_valide ? (
+                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-teal-100 text-teal-800">
+                      <BadgeCheck className="h-3 w-3" />
+                      Devis validé{order.devis_valide_date ? ` le ${new Date(order.devis_valide_date).toLocaleDateString('fr-FR')}` : ''}
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">
+                      En attente de validation
+                    </span>
+                  )
+                )}
                 {order.reference && <span className="text-xs text-gray-400">({order.reference})</span>}
                 <span className={`px-2 py-0.5 rounded-full text-xs ${MENUISERIE_STATUS_STYLES[aggregatedStatus] || ''}`}>
                   {statusLabel(aggregatedStatus)}
@@ -1249,6 +1322,16 @@ function MenuiserieManagement() {
               </div>
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
+              {orderCategory(order) === 'commande_portes' && (
+                <button
+                  onClick={() => toggleDevisValide(order)}
+                  className={`p-2 rounded-lg ${order.devis_valide ? 'text-teal-600 bg-teal-100 hover:bg-teal-200' : 'text-gray-400 hover:bg-gray-100 hover:text-teal-600'}`}
+                  aria-label={order.devis_valide ? 'Annuler la validation du devis' : 'Valider le devis'}
+                  title={order.devis_valide ? 'Devis validé — cliquer pour annuler' : 'Valider le devis (prêt pour production)'}
+                >
+                  <BadgeCheck className="h-4 w-4" />
+                </button>
+              )}
               <button
                 onClick={() => toggleUrgent(order)}
                 className={`p-2 rounded-lg ${order.is_urgent ? 'text-red-600 bg-red-100 hover:bg-red-200' : 'text-gray-400 hover:bg-gray-100 hover:text-red-600'}`}
@@ -1279,9 +1362,14 @@ function MenuiserieManagement() {
       </div>
 
       {modal.type === 'create' && (
-        <Modal title={`Nouveau bon — ${category === 'termines' ? 'Menuiserie' : categoryLabel(category)}`} onClose={() => setModal({ type: null })}>
+        <Modal title={`Nouveau bon — ${category === 'termines' ? 'Menuiserie' : tabLabel(category)}`} onClose={() => setModal({ type: null })}>
           <OrderForm
-            defaultCategory={category === 'termines' ? 'petites_interventions' : category}
+            defaultCategory={
+              category === 'termines' ? 'petites_interventions'
+                : category === 'portes_validees' ? 'commande_portes'
+                  : category
+            }
+            defaultDevisValide={category === 'portes_validees'}
             menuisiers={menuisiers}
             interventionOptions={interventionOptions}
             chargeAffaireOptions={chargeAffaireOptions}
@@ -1326,7 +1414,7 @@ function MenuiserieManagement() {
         </Modal>
       )}
       {modal.type === 'export' && (
-        <Modal title={`Export mensuel — ${category === 'termines' ? 'Terminés' : categoryLabel(category)}`} onClose={() => setModal({ type: null })}>
+        <Modal title={`Export mensuel — ${tabLabel(category)}`} onClose={() => setModal({ type: null })}>
           <ExportForm orders={categoryOrders} onClose={() => setModal({ type: null })} />
         </Modal>
       )}

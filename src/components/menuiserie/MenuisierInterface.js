@@ -10,7 +10,7 @@ import {
   MENUISERIE_STATUS, MENUISERIE_STATUS_STYLES, MENUISERIE_PHOTO_CATEGORIES,
   typeLabel, statusLabel, computeOrderStatus, orderInterventions, newIntervention,
   findMenuiserieTrade, compareOrders, orderReceivedDate, sortInterventionOptions,
-  MENUISERIE_CATEGORIES, orderCategory,
+  MENUISERIE_TABS, orderMatchesTab,
 } from '../../services/menuiserieService';
 import { generateMenuiseriePdf, openOrDownloadPdf } from '../../services/menuiseriePdf';
 import PhotoUploadButton from '../PhotoUploadButton';
@@ -59,12 +59,9 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
     return orders.filter((o) => {
       const ivs = orderInterventions(o);
       const aggStatus = computeOrderStatus(ivs);
-      // Sous-section : un bon terminé n'apparaît que dans l'onglet « Terminés »
-      if (tab === 'termines') {
-        if (aggStatus !== 'completed') return false;
-      } else {
-        if (orderCategory(o) !== tab || aggStatus === 'completed') return false;
-      }
+      // Sous-section : même découpage que côté admin (terminés à part,
+      // portes validées ou en attente de devis).
+      if (!orderMatchesTab(o, tab)) return false;
       if (statusFilter !== 'all' && aggStatus !== statusFilter) return false;
       if (!term) return true;
       const haystack = [
@@ -277,15 +274,19 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
         <main className="max-w-3xl mx-auto px-4 py-6 space-y-3">
           {/* Sous-sections, comme côté admin */}
           <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
-            {[...Object.entries(MENUISERIE_CATEGORIES), ['termines', 'Terminés']].map(([value, label]) => {
-              const count = orders.filter((o) => {
-                const done = computeOrderStatus(orderInterventions(o)) === 'completed';
-                return value === 'termines' ? done : orderCategory(o) === value && !done;
-              }).length;
+            {MENUISERIE_TABS.map(([value, label]) => {
+              const count = orders.filter((o) => orderMatchesTab(o, value)).length;
               const active = tab === value;
               const activeStyle = value === 'termines'
                 ? 'border-green-600 text-green-700 bg-green-50'
-                : 'border-blue-600 text-blue-700 bg-blue-50';
+                : value === 'portes_validees'
+                  ? 'border-teal-600 text-teal-700 bg-teal-50'
+                  : 'border-blue-600 text-blue-700 bg-blue-50';
+              const activeBadge = value === 'termines'
+                ? 'bg-green-100 text-green-700'
+                : value === 'portes_validees'
+                  ? 'bg-teal-100 text-teal-700'
+                  : 'bg-blue-100 text-blue-700';
               return (
                 <button
                   key={value}
@@ -296,9 +297,7 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
                 >
                   {label}
                   <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-xs ${
-                    active
-                      ? (value === 'termines' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700')
-                      : 'bg-gray-100 text-gray-600'
+                    active ? activeBadge : 'bg-gray-100 text-gray-600'
                   }`}>
                     {count}
                   </span>
@@ -390,6 +389,11 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
                     )}
                     {order.category === 'commande_portes' && (
                       <span className="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full">Commande de portes</span>
+                    )}
+                    {order.category === 'commande_portes' && order.devis_valide && (
+                      <span className="flex items-center gap-1 text-xs bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full font-semibold">
+                        <CheckCircle className="h-3 w-3" /> Devis validé
+                      </span>
                     )}
                     <span className={`px-2 py-0.5 rounded-full text-xs ${MENUISERIE_STATUS_STYLES[aggStatus] || ''}`}>
                       {statusLabel(aggStatus)}

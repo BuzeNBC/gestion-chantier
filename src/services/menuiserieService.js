@@ -52,6 +52,31 @@ export const orderCategory = (order) =>
 export const categoryLabel = (category) =>
   MENUISERIE_CATEGORIES[category] || MENUISERIE_CATEGORIES.petites_interventions;
 
+// Onglets affichés côté admin ET côté menuisier (même découpage partout) :
+//   - Petites interventions : bons en cours de cette sous-section
+//   - Commande de portes    : commandes en ATTENTE de validation du devis
+//   - Portes validées       : commandes dont le devis est validé -> production
+//   - Terminés              : tous les bons dont les interventions sont finies
+export const MENUISERIE_TABS = [
+  ['petites_interventions', 'Petites interventions'],
+  ['commande_portes', 'Commande de portes'],
+  ['portes_validees', 'Portes validées'],
+  ['termines', 'Terminés'],
+];
+
+export const orderMatchesTab = (order, tab) => {
+  const done = computeOrderStatus(orderInterventions(order)) === 'completed';
+  if (tab === 'termines') return done;
+  if (done) return false;
+  if (tab === 'portes_validees') {
+    return orderCategory(order) === 'commande_portes' && !!order.devis_valide;
+  }
+  if (tab === 'commande_portes') {
+    return orderCategory(order) === 'commande_portes' && !order.devis_valide;
+  }
+  return orderCategory(order) === tab;
+};
+
 // Statuts de facturation d'un bon — parcours de la secrétaire :
 // devis à faire -> devis fait -> à facturer -> facturé
 export const BILLING_STATUS = {
