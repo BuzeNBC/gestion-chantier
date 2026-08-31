@@ -95,6 +95,7 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
     ...emptyForm,
     category: defaultCategory || 'petites_interventions',
     devis_valide: !!defaultDevisValide,
+    devis_valide_date: defaultDevisValide ? new Date().toISOString().slice(0, 10) : '',
     // Par défaut, le bon est reçu aujourd'hui.
     received_date: new Date().toISOString().slice(0, 10),
   });
@@ -118,6 +119,10 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
   const submit = () => {
     if (!form.client_name.trim()) {
       alert('Le nom du client est obligatoire.');
+      return;
+    }
+    if (form.category === 'commande_portes' && form.devis_valide && !form.devis_valide_date) {
+      alert('Renseigne la date de validation du devis.');
       return;
     }
     // Construire les interventions à partir des lignes
@@ -152,7 +157,7 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
       // La validation du devis ne concerne que les commandes de portes.
       devis_valide: form.category === 'commande_portes' ? form.devis_valide : false,
       devis_valide_date: form.category === 'commande_portes' && form.devis_valide
-        ? (form.devis_valide_date || new Date().toISOString().slice(0, 10))
+        ? form.devis_valide_date
         : null,
       reference: form.reference || null,
       bt_number: form.bt_number || null,
@@ -344,20 +349,43 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
       </div>
 
       {form.category === 'commande_portes' && (
-        <label className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border cursor-pointer ${
-          form.devis_valide ? 'bg-teal-50 border-teal-300' : 'bg-white border-gray-300 hover:bg-gray-50'
+        <div className={`px-3 py-2.5 rounded-lg border space-y-2 ${
+          form.devis_valide ? 'bg-teal-50 border-teal-300' : 'bg-white border-gray-300'
         }`}>
-          <input
-            type="checkbox"
-            checked={form.devis_valide}
-            onChange={(e) => set('devis_valide', e.target.checked)}
-            className="h-4 w-4 text-teal-600 border-gray-300 rounded"
-          />
-          <BadgeCheck className={`h-4 w-4 ${form.devis_valide ? 'text-teal-600' : 'text-gray-400'}`} />
-          <span className={`text-sm font-medium ${form.devis_valide ? 'text-teal-700' : 'text-gray-700'}`}>
-            Devis validé — la commande passe dans « Portes validées » (production)
-          </span>
-        </label>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.devis_valide}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                setForm((f) => ({
+                  ...f,
+                  devis_valide: checked,
+                  // Pré-remplit la date à aujourd'hui quand on coche
+                  devis_valide_date: checked
+                    ? (f.devis_valide_date || new Date().toISOString().slice(0, 10))
+                    : '',
+                }));
+              }}
+              className="h-4 w-4 text-teal-600 border-gray-300 rounded"
+            />
+            <BadgeCheck className={`h-4 w-4 ${form.devis_valide ? 'text-teal-600' : 'text-gray-400'}`} />
+            <span className={`text-sm font-medium ${form.devis_valide ? 'text-teal-700' : 'text-gray-700'}`}>
+              Devis validé — la commande passe dans « Portes validées » (production)
+            </span>
+          </label>
+          {form.devis_valide && (
+            <div className="pl-6">
+              <label className="block text-xs font-medium text-teal-700 mb-1">Date de validation du devis *</label>
+              <input
+                type="date"
+                value={form.devis_valide_date || ''}
+                onChange={(e) => set('devis_valide_date', e.target.value)}
+                className="px-3 py-2 border border-teal-300 rounded-lg bg-white"
+              />
+            </div>
+          )}
+        </div>
       )}
 
       <div>
@@ -663,6 +691,64 @@ const RelancesForm = ({ order, onSaved, onCancel }) => {
         >
           {saving ? 'Enregistrement…' : 'Enregistrer'}
         </button>
+      </div>
+    </div>
+  );
+};
+
+// Modal « Devis validé » : demande la date de validation (aujourd'hui par
+// défaut) avant de basculer la commande dans « Portes validées ». Permet
+// aussi de corriger la date ou d'annuler la validation.
+const DevisValideForm = ({ order, onSave, onCancel }) => {
+  const [date, setDate] = useState(
+    order.devis_valide_date || new Date().toISOString().slice(0, 10)
+  );
+
+  const validate = () => {
+    if (!date) {
+      alert('Renseigne la date de validation du devis.');
+      return;
+    }
+    onSave({ devis_valide: true, devis_valide_date: date });
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-600">
+        {order.devis_valide
+          ? 'Ce devis est validé. Tu peux corriger la date ou annuler la validation.'
+          : 'La commande passera dans « Portes validées » (prête pour production).'}
+      </p>
+      <div>
+        <label className="block text-sm font-medium mb-1">Date de validation du devis *</label>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="px-3 py-2 border border-gray-300 rounded-lg"
+        />
+      </div>
+      <div className="flex items-center justify-between gap-3 pt-2">
+        {order.devis_valide ? (
+          <button
+            onClick={() => onSave({ devis_valide: false, devis_valide_date: null })}
+            className="px-4 py-2 text-red-600 rounded-lg hover:bg-red-50 text-sm"
+          >
+            Annuler la validation
+          </button>
+        ) : <span />}
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="px-4 py-2 text-gray-600 rounded-lg hover:bg-gray-100">
+            Fermer
+          </button>
+          <button
+            onClick={validate}
+            className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
+          >
+            <BadgeCheck className="h-4 w-4" />
+            {order.devis_valide ? 'Enregistrer la date' : 'Valider le devis'}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -992,21 +1078,17 @@ function MenuiserieManagement() {
     }
   };
 
-  // Bascule rapide « devis validé » pour une commande de portes : elle passe
-  // de « Commande de portes » (en attente) à « Portes validées » (production).
-  const toggleDevisValide = async (order) => {
+  // Validation / annulation du devis d'une commande de portes, avec la date
+  // choisie dans le modal DevisValideForm.
+  const saveDevisValide = async (order, patch) => {
     try {
-      const next = !order.devis_valide;
-      const patch = {
-        devis_valide: next,
-        devis_valide_date: next ? new Date().toISOString().slice(0, 10) : null,
-      };
       const { error } = await supabase
         .from('menuiserie_orders')
         .update(patch)
         .eq('id', order.id);
       if (error) throw error;
       setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, ...patch } : o)));
+      setModal({ type: null });
     } catch (error) {
       console.error('Erreur validation devis:', error);
       alert('Erreur lors de la validation du devis.');
@@ -1324,10 +1406,10 @@ function MenuiserieManagement() {
             <div className="flex items-center gap-1 flex-shrink-0">
               {orderCategory(order) === 'commande_portes' && (
                 <button
-                  onClick={() => toggleDevisValide(order)}
+                  onClick={() => setModal({ type: 'devis_valide', data: order })}
                   className={`p-2 rounded-lg ${order.devis_valide ? 'text-teal-600 bg-teal-100 hover:bg-teal-200' : 'text-gray-400 hover:bg-gray-100 hover:text-teal-600'}`}
-                  aria-label={order.devis_valide ? 'Annuler la validation du devis' : 'Valider le devis'}
-                  title={order.devis_valide ? 'Devis validé — cliquer pour annuler' : 'Valider le devis (prêt pour production)'}
+                  aria-label={order.devis_valide ? 'Modifier la validation du devis' : 'Valider le devis'}
+                  title={order.devis_valide ? 'Devis validé — cliquer pour modifier/annuler' : 'Valider le devis (prêt pour production)'}
                 >
                   <BadgeCheck className="h-4 w-4" />
                 </button>
@@ -1386,6 +1468,15 @@ function MenuiserieManagement() {
             interventionOptions={interventionOptions}
             chargeAffaireOptions={chargeAffaireOptions}
             onSubmit={handleEdit}
+            onCancel={() => setModal({ type: null })}
+          />
+        </Modal>
+      )}
+      {modal.type === 'devis_valide' && (
+        <Modal title={`Devis — ${modal.data.client_name || 'commande de portes'}`} onClose={() => setModal({ type: null })}>
+          <DevisValideForm
+            order={modal.data}
+            onSave={(patch) => saveDevisValide(modal.data, patch)}
             onCancel={() => setModal({ type: null })}
           />
         </Modal>
