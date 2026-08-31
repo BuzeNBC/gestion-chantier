@@ -376,7 +376,12 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
               >
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    {order.is_urgent && (
+                    {order.cancelled && (
+                      <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-gray-600 text-white">
+                        Annulé
+                      </span>
+                    )}
+                    {!order.cancelled && order.is_urgent && (
                       <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-red-600 text-white">
                         <AlertTriangle className="h-3 w-3" /> URGENT
                       </span>
@@ -619,7 +624,17 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
       </header>
 
       <main className="max-w-3xl mx-auto px-4 py-6 space-y-6">
-        {selectedOrder.is_urgent && (
+        {selectedOrder.cancelled && (
+          <div className="px-4 py-3 bg-gray-600 text-white rounded-lg text-sm space-y-1">
+            <p className="font-bold">
+              BON ANNULÉ{selectedOrder.cancelled_date ? ` le ${new Date(selectedOrder.cancelled_date).toLocaleDateString('fr-FR')}` : ''}
+            </p>
+            {selectedOrder.cancelled_reason && (
+              <p className="text-gray-100 whitespace-pre-wrap">{selectedOrder.cancelled_reason}</p>
+            )}
+          </div>
+        )}
+        {!selectedOrder.cancelled && selectedOrder.is_urgent && (
           <p className="flex items-center gap-2 px-4 py-3 bg-red-600 text-white rounded-lg text-sm font-bold">
             <AlertTriangle className="h-5 w-5" /> CHANTIER URGENT
           </p>

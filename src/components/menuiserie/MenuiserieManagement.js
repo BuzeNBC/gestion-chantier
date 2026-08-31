@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
 import {
   Plus, Edit, Trash, X, Search, Eye, MapPin, User, Calendar, FileText, Download,
-  Euro, Bell, AlertTriangle, Inbox, BadgeCheck,
+  Euro, Bell, AlertTriangle, Inbox, BadgeCheck, Ban,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { DBService, STORES, generateUUID } from '../../services/dbService';
@@ -754,6 +754,80 @@ const DevisValideForm = ({ order, onSave, onCancel }) => {
   );
 };
 
+// Modal « Annuler le bon » : le bon n'est PAS supprimé — il passe dans
+// l'onglet « Terminés » avec une raison obligatoire et une date, pour
+// pouvoir justifier plus tard pourquoi on n'est pas intervenu.
+// Permet aussi de corriger la raison ou de rétablir le bon.
+const CancelOrderForm = ({ order, onSave, onCancel }) => {
+  const [reason, setReason] = useState(order.cancelled_reason || '');
+  const [date, setDate] = useState(
+    order.cancelled_date || new Date().toISOString().slice(0, 10)
+  );
+
+  const validate = () => {
+    if (!reason.trim()) {
+      alert("Renseigne la raison de l'annulation.");
+      return;
+    }
+    if (!date) {
+      alert("Renseigne la date de l'annulation.");
+      return;
+    }
+    onSave({ cancelled: true, cancelled_reason: reason.trim(), cancelled_date: date });
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-600">
+        {order.cancelled
+          ? 'Ce bon est annulé. Tu peux corriger la raison, la date, ou le rétablir.'
+          : 'Le bon ne sera pas supprimé : il passera dans « Terminés » avec la raison ci-dessous.'}
+      </p>
+      <div>
+        <label className="block text-sm font-medium mb-1">Raison de l'annulation *</label>
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          rows={3}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          placeholder="Ex: client injoignable, travaux annulés par le bailleur, doublon avec le BT n°…"
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium mb-1">Date de l'annulation *</label>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="px-3 py-2 border border-gray-300 rounded-lg"
+        />
+      </div>
+      <div className="flex items-center justify-between gap-3 pt-2">
+        {order.cancelled ? (
+          <button
+            onClick={() => onSave({ cancelled: false, cancelled_reason: null, cancelled_date: null })}
+            className="px-4 py-2 text-green-700 rounded-lg hover:bg-green-50 text-sm"
+          >
+            Rétablir le bon
+          </button>
+        ) : <span />}
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="px-4 py-2 text-gray-600 rounded-lg hover:bg-gray-100">
+            Fermer
+          </button>
+          <button
+            onClick={validate}
+            className="flex items-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700"
+          >
+            <Ban className="h-4 w-4" />
+            {order.cancelled ? 'Enregistrer' : 'Annuler le bon'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const OrderDetail = ({ order }) => {
   const [pdfGenerating, setPdfGenerating] = useState(false);
 
@@ -784,7 +858,18 @@ const OrderDetail = ({ order }) => {
           {pdfGenerating ? 'Génération…' : 'Rapport PDF'}
         </button>
       </div>
-    {order.is_urgent && (
+    {order.cancelled && (
+      <div className="px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-sm space-y-1">
+        <p className="flex items-center gap-2 font-semibold text-gray-700">
+          <Ban className="h-4 w-4" />
+          Bon annulé{order.cancelled_date ? ` le ${new Date(order.cancelled_date).toLocaleDateString('fr-FR')}` : ''}
+        </p>
+        {order.cancelled_reason && (
+          <p className="text-gray-600 whitespace-pre-wrap">{order.cancelled_reason}</p>
+        )}
+      </div>
+    )}
+    {!order.cancelled && order.is_urgent && (
       <p className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm font-semibold text-red-700">
         <AlertTriangle className="h-4 w-4" /> Chantier urgent
       </p>
@@ -1095,6 +1180,23 @@ function MenuiserieManagement() {
     }
   };
 
+  // Annulation / rétablissement d'un bon (jamais supprimé), avec la raison
+  // saisie dans le modal CancelOrderForm.
+  const saveCancelled = async (order, patch) => {
+    try {
+      const { error } = await supabase
+        .from('menuiserie_orders')
+        .update(patch)
+        .eq('id', order.id);
+      if (error) throw error;
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, ...patch } : o)));
+      setModal({ type: null });
+    } catch (error) {
+      console.error('Erreur annulation bon:', error);
+      alert("Erreur lors de l'annulation du bon.");
+    }
+  };
+
   // Bascule rapide du marquage « urgent » depuis la liste.
   const toggleUrgent = async (order) => {
     try {
@@ -1304,14 +1406,22 @@ function MenuiserieManagement() {
           const relances = orderRelances(order);
           const totalHt = orderTotalHt(order);
           const billing = effectiveBillingStatus(order);
-          const rowStyle = order.is_urgent
-            ? 'border-l-4 border-red-600 bg-red-50'
-            : relanceBorderStyle(relances.length);
+          const rowStyle = order.cancelled
+            ? 'border-l-4 border-gray-400 bg-gray-50'
+            : order.is_urgent
+              ? 'border-l-4 border-red-600 bg-red-50'
+              : relanceBorderStyle(relances.length);
           return (
           <div key={order.id} className={`p-4 flex items-center justify-between gap-4 ${rowStyle}`}>
             <div className="space-y-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                {order.is_urgent && (
+                {order.cancelled && (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-gray-600 text-white">
+                    <Ban className="h-3 w-3" />
+                    Annulé{order.cancelled_date ? ` le ${new Date(order.cancelled_date).toLocaleDateString('fr-FR')}` : ''}
+                  </span>
+                )}
+                {!order.cancelled && order.is_urgent && (
                   <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-red-600 text-white">
                     <AlertTriangle className="h-3 w-3" /> URGENT
                   </span>
@@ -1402,6 +1512,11 @@ function MenuiserieManagement() {
                   <span className="font-semibold text-gray-700">{fmtEuro(totalHt)} HT</span>
                 )}
               </div>
+              {order.cancelled && order.cancelled_reason && (
+                <p className="text-xs text-gray-500 italic">
+                  Raison de l'annulation : {order.cancelled_reason}
+                </p>
+              )}
             </div>
             <div className="flex items-center gap-1 flex-shrink-0">
               {orderCategory(order) === 'commande_portes' && (
@@ -1433,6 +1548,14 @@ function MenuiserieManagement() {
               </button>
               <button onClick={() => setModal({ type: 'edit', data: order })} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" aria-label="Modifier">
                 <Edit className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setModal({ type: 'cancel', data: order })}
+                className={`p-2 rounded-lg ${order.cancelled ? 'text-gray-700 bg-gray-200 hover:bg-gray-300' : 'text-gray-400 hover:bg-gray-100 hover:text-rose-600'}`}
+                aria-label={order.cancelled ? "Voir/modifier l'annulation" : 'Annuler le bon'}
+                title={order.cancelled ? "Bon annulé — voir la raison, corriger ou rétablir" : 'Annuler le bon (sans le supprimer)'}
+              >
+                <Ban className="h-4 w-4" />
               </button>
               <button onClick={() => handleDelete(order.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg" aria-label="Supprimer">
                 <Trash className="h-4 w-4" />
@@ -1468,6 +1591,15 @@ function MenuiserieManagement() {
             interventionOptions={interventionOptions}
             chargeAffaireOptions={chargeAffaireOptions}
             onSubmit={handleEdit}
+            onCancel={() => setModal({ type: null })}
+          />
+        </Modal>
+      )}
+      {modal.type === 'cancel' && (
+        <Modal title={`Annulation — ${modal.data.client_name || 'bon'}`} onClose={() => setModal({ type: null })}>
+          <CancelOrderForm
+            order={modal.data}
+            onSave={(patch) => saveCancelled(modal.data, patch)}
             onCancel={() => setModal({ type: null })}
           />
         </Modal>

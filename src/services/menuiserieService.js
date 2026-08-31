@@ -65,7 +65,10 @@ export const MENUISERIE_TABS = [
 ];
 
 export const orderMatchesTab = (order, tab) => {
-  const done = computeOrderStatus(orderInterventions(order)) === 'completed';
+  // Un bon annulé est « clos » comme un bon terminé : il quitte sa
+  // sous-section et se retrouve dans l'onglet « Terminés ».
+  const done = computeOrderStatus(orderInterventions(order)) === 'completed'
+    || !!order.cancelled;
   if (tab === 'termines') return done;
   if (done) return false;
   if (tab === 'portes_validees') {
@@ -111,6 +114,8 @@ export const isOrderBillable = (order) =>
 export const effectiveBillingStatus = (order) => {
   let s = order?.billing_status || 'devis_a_faire';
   if (s === 'devis_envoye') s = 'devis_fait'; // ancienne valeur (avant 0008)
+  // Un bon annulé n'a rien à facturer (sauf s'il a déjà été facturé).
+  if (order?.cancelled) return s === 'facture' ? s : null;
   // Un bon non terminé ne peut être ni « devis à faire » ni « à facturer »
   // (« à facturer » couvre aussi l'ancien défaut d'une base non migrée).
   if ((s === 'devis_a_faire' || s === 'a_facturer') && !isOrderBillable(order)) return null;
