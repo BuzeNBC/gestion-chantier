@@ -81,11 +81,12 @@ export const orderMatchesTab = (order, tab) => {
 };
 
 // Statuts de facturation d'un bon — parcours de la secrétaire :
-// devis à faire -> devis fait -> à facturer -> facturé
+// devis à faire -> devis fait -> à facturer -> en cours de facturation -> facturé
 export const BILLING_STATUS = {
   devis_a_faire: 'Devis à faire',
   devis_fait: 'Devis fait',
   a_facturer: 'À facturer',
+  en_cours_facturation: 'En cours de facturation',
   facture: 'Facturé',
 };
 
@@ -93,6 +94,7 @@ export const BILLING_STATUS_STYLES = {
   devis_a_faire: 'bg-sky-100 text-sky-800',
   devis_fait: 'bg-purple-100 text-purple-800',
   a_facturer: 'bg-amber-100 text-amber-800',
+  en_cours_facturation: 'bg-orange-100 text-orange-800',
   facture: 'bg-emerald-100 text-emerald-800',
 };
 

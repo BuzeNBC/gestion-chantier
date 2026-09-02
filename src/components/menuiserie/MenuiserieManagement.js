@@ -537,7 +537,7 @@ const BillingForm = ({ order, onSaved, onCancel }) => {
           ))}
         </div>
         <p className="text-xs text-gray-500 mt-1">
-          Parcours : Devis à faire → Devis fait → À facturer → Facturé.
+          Parcours : Devis à faire → Devis fait → À facturer → En cours de facturation → Facturé.
         </p>
       </div>
 
