@@ -62,14 +62,18 @@ export const MENUISERIE_TABS = [
   ['commande_portes', 'Commande de portes'],
   ['portes_validees', 'Portes validées'],
   ['termines', 'Terminés'],
+  ['termines_factures', 'Terminé et Facturé'],
 ];
 
 export const orderMatchesTab = (order, tab) => {
   // Un bon annulé est « clos » comme un bon terminé : il quitte sa
-  // sous-section et se retrouve dans l'onglet « Terminés ».
+  // sous-section et se retrouve dans l'onglet « Terminés ». Une fois
+  // facturé, un bon clos passe dans « Terminé et Facturé ».
   const done = computeOrderStatus(orderInterventions(order)) === 'completed'
     || !!order.cancelled;
-  if (tab === 'termines') return done;
+  const factured = order?.billing_status === 'facture';
+  if (tab === 'termines_factures') return done && factured;
+  if (tab === 'termines') return done && !factured;
   if (done) return false;
   if (tab === 'portes_validees') {
     return orderCategory(order) === 'commande_portes' && !!order.devis_valide;
@@ -141,6 +145,22 @@ export const relanceBorderStyle = (count) => {
 };
 
 export const orderRelances = (order) => (Array.isArray(order?.relances) ? order.relances : []);
+
+// Date de référence pour classer un bon « terminé et facturé » par mois :
+// la date de facturation si renseignée, sinon la dernière date de
+// réalisation des interventions, sinon la date d'annulation ou de réception.
+export const orderFactureDate = (order) => {
+  if (order?.billed_date) return order.billed_date;
+  const completed = orderInterventions(order)
+    .map((iv) => iv.completed_date)
+    .filter(Boolean)
+    .sort();
+  if (completed.length > 0) return completed[completed.length - 1];
+  return order?.cancelled_date || orderReceivedDate(order) || '';
+};
+
+// Mois ('YYYY-MM') correspondant, pour le groupement d'affichage.
+export const orderFactureMonth = (order) => (orderFactureDate(order) || '').slice(0, 7);
 
 // Date de la relance la plus récente d'un bon ('' si aucune).
 export const lastRelanceDate = (order) =>

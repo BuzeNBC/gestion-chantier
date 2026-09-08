@@ -279,14 +279,18 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
               const active = tab === value;
               const activeStyle = value === 'termines'
                 ? 'border-green-600 text-green-700 bg-green-50'
-                : value === 'portes_validees'
-                  ? 'border-teal-600 text-teal-700 bg-teal-50'
-                  : 'border-blue-600 text-blue-700 bg-blue-50';
+                : value === 'termines_factures'
+                  ? 'border-emerald-700 text-emerald-800 bg-emerald-50'
+                  : value === 'portes_validees'
+                    ? 'border-teal-600 text-teal-700 bg-teal-50'
+                    : 'border-blue-600 text-blue-700 bg-blue-50';
               const activeBadge = value === 'termines'
                 ? 'bg-green-100 text-green-700'
-                : value === 'portes_validees'
-                  ? 'bg-teal-100 text-teal-700'
-                  : 'bg-blue-100 text-blue-700';
+                : value === 'termines_factures'
+                  ? 'bg-emerald-100 text-emerald-800'
+                  : value === 'portes_validees'
+                    ? 'bg-teal-100 text-teal-700'
+                    : 'bg-blue-100 text-blue-700';
               return (
                 <button
                   key={value}

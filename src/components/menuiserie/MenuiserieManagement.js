@@ -12,7 +12,7 @@ import {
   BILLING_STATUS, BILLING_STATUS_STYLES, billingLabel,
   isOrderBillable, effectiveBillingStatus,
   MENUISERIE_CATEGORIES, orderCategory, categoryLabel, compareOrders, orderReceivedDate,
-  sortInterventionOptions, MENUISERIE_TABS, orderMatchesTab,
+  sortInterventionOptions, MENUISERIE_TABS, orderMatchesTab, orderFactureMonth,
   relanceBadgeStyle, relanceBorderStyle, orderRelances, newRelance,
   orderTotalHt, fmtEuro,
 } from '../../services/menuiserieService';
@@ -1256,8 +1256,17 @@ function MenuiserieManagement() {
   });
 
   // Tri partagé avec l'interface menuisier (cf. compareOrders) :
-  // urgents > relances > date prévue > date de création.
-  const sortedOrders = [...filtered].sort(compareOrders);
+  // urgents > relances > date de réception > date de création.
+  // Dans « Terminé et Facturé », on trie d'abord par mois (le plus récent en
+  // haut) pour permettre le groupement mensuel à l'affichage.
+  const sortedOrders = [...filtered].sort((a, b) => {
+    if (category === 'termines_factures') {
+      const ma = orderFactureMonth(a);
+      const mb = orderFactureMonth(b);
+      if (ma !== mb) return mb.localeCompare(ma);
+    }
+    return compareOrders(a, b);
+  });
 
   const stats = categoryOrders.reduce(
     (acc, o) => {
@@ -1319,14 +1328,18 @@ function MenuiserieManagement() {
           const active = category === value;
           const activeStyle = value === 'termines'
             ? 'border-green-600 text-green-700 bg-green-50'
-            : value === 'portes_validees'
-              ? 'border-teal-600 text-teal-700 bg-teal-50'
-              : 'border-blue-600 text-blue-700 bg-blue-50';
+            : value === 'termines_factures'
+              ? 'border-emerald-700 text-emerald-800 bg-emerald-50'
+              : value === 'portes_validees'
+                ? 'border-teal-600 text-teal-700 bg-teal-50'
+                : 'border-blue-600 text-blue-700 bg-blue-50';
           const activeBadge = value === 'termines'
             ? 'bg-green-100 text-green-700'
-            : value === 'portes_validees'
-              ? 'bg-teal-100 text-teal-700'
-              : 'bg-blue-100 text-blue-700';
+            : value === 'termines_factures'
+              ? 'bg-emerald-100 text-emerald-800'
+              : value === 'portes_validees'
+                ? 'bg-teal-100 text-teal-700'
+                : 'bg-blue-100 text-blue-700';
           return (
             <button
               key={value}
@@ -1399,7 +1412,11 @@ function MenuiserieManagement() {
         {sortedOrders.length === 0 && (
           <div className="p-8 text-center text-gray-500">Aucun bon ne correspond.</div>
         )}
-        {sortedOrders.map((order) => {
+        {(() => {
+        // Dans « Terminé et Facturé », on insère un en-tête à chaque changement
+        // de mois (liste déjà triée par mois décroissant).
+        let lastMonth = null;
+        return sortedOrders.map((order) => {
           const ivs = orderInterventions(order);
           const aggregatedStatus = computeOrderStatus(ivs);
           const completedCount = ivs.filter((i) => i.status === 'completed').length;
@@ -1411,8 +1428,31 @@ function MenuiserieManagement() {
             : order.is_urgent
               ? 'border-l-4 border-red-600 bg-red-50'
               : relanceBorderStyle(relances.length);
+          // En-tête de mois (uniquement dans « Terminé et Facturé »)
+          let monthHeader = null;
+          if (category === 'termines_factures') {
+            const m = orderFactureMonth(order) || '';
+            if (m !== lastMonth) {
+              lastMonth = m;
+              const group = sortedOrders.filter((o) => (orderFactureMonth(o) || '') === m);
+              const total = group.reduce((s, o) => s + orderTotalHt(o), 0);
+              monthHeader = (
+                <div className="px-4 py-2 bg-emerald-50 flex items-center justify-between gap-2">
+                  <span className="text-sm font-bold text-emerald-800 capitalize">
+                    {m ? monthLabel(m) : 'Mois non déterminé'}
+                  </span>
+                  <span className="text-xs text-emerald-700">
+                    {group.length} bon{group.length > 1 ? 's' : ''}
+                    {total > 0 ? ` — ${fmtEuro(total)} HT` : ''}
+                  </span>
+                </div>
+              );
+            }
+          }
           return (
-          <div key={order.id} className={`p-4 flex items-center justify-between gap-4 ${rowStyle}`}>
+          <React.Fragment key={order.id}>
+          {monthHeader}
+          <div className={`p-4 flex items-center justify-between gap-4 ${rowStyle}`}>
             <div className="space-y-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 {order.cancelled && (
@@ -1562,17 +1602,19 @@ function MenuiserieManagement() {
               </button>
             </div>
           </div>
+          </React.Fragment>
           );
-        })}
+        });
+        })()}
       </div>
 
       {modal.type === 'create' && (
-        <Modal title={`Nouveau bon — ${category === 'termines' ? 'Menuiserie' : tabLabel(category)}`} onClose={() => setModal({ type: null })}>
+        <Modal title={`Nouveau bon — ${category === 'termines' || category === 'termines_factures' ? 'Menuiserie' : tabLabel(category)}`} onClose={() => setModal({ type: null })}>
           <OrderForm
             defaultCategory={
-              category === 'termines' ? 'petites_interventions'
-                : category === 'portes_validees' ? 'commande_portes'
-                  : category
+              category === 'portes_validees' ? 'commande_portes'
+                : MENUISERIE_CATEGORIES[category] ? category
+                  : 'petites_interventions'
             }
             defaultDevisValide={category === 'portes_validees'}
             menuisiers={menuisiers}
