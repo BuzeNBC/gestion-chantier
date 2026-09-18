@@ -137,34 +137,8 @@ export async function generateMenuiseriePdf(order) {
   }
   y = y - detailsHeight - 15;
 
-  // --- Description ------------------------------------------------------------
-  if (order.description) {
-    page.drawText("Description de l'intervention", {
-      x: MARGIN, y, size: 12, font: helveticaBold, color: primaryColor,
-    });
-    y -= 18;
-    // Wrap manuel basique (~110 chars)
-    const wrap = (text, max) => {
-      const words = text.split(/\s+/);
-      const lines = [];
-      let line = '';
-      for (const w of words) {
-        if ((line + ' ' + w).trim().length > max) {
-          lines.push(line);
-          line = w;
-        } else {
-          line = (line + ' ' + w).trim();
-        }
-      }
-      if (line) lines.push(line);
-      return lines;
-    };
-    for (const line of wrap(cleanText(order.description), 110)) {
-      page.drawText(line, { x: MARGIN, y, size: 10, font: helvetica, color: textColor });
-      y -= 14;
-    }
-    y -= 8;
-  }
+  // NB : la description de l'intervention n'apparaît volontairement pas dans
+  // le rapport final (usage interne uniquement).
 
   // --- Pour chaque intervention du bon : titre + cotes + photos + notes -----
   const interventions = orderInterventions(order);
