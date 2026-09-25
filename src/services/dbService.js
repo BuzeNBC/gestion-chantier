@@ -16,8 +16,9 @@ export const generateUUID = () => {
 // Définition des stores disponibles dans l'application
 export const STORES = {
   PHOTOS: "photos",
-  SITES: "sites", 
-  TRADES: "trades"
+  SITES: "sites",
+  TRADES: "trades",
+  MENUISERIE: "menuiserie_orders"
 };
 
 export class DBService {
@@ -26,10 +27,20 @@ export class DBService {
     try {
       console.log('Tentative de stockage dans:', storeName);
       
-      // Supprimer les propriétés de relation qui ne font pas partie du schéma
+      // Supprimer les propriétés de relation qui ne font pas partie du schéma.
+      // Les jointures Supabase (`select('*, alias:fk_col(...)')`) retournent
+      // l'enregistrement joint sous le nom de l'alias. Si on renvoie ce champ
+      // tel quel à l'upsert, Postgres rejette : "Could not find the '<alias>'
+      // column of 'sites'". On filtre donc tous les alias connus utilisés
+      // dans le code (côté SiteManagement c'est `worker`, côté
+      // DashboardContent/WorkerInterface c'est `profiles`).
       const cleanData = { ...data };
       if (storeName === 'sites') {
         delete cleanData.profiles;
+        delete cleanData.worker;
+      }
+      if (storeName === 'menuiserie_orders') {
+        delete cleanData.assigned_profile;
       }
   
       const { data: result, error } = await supabase

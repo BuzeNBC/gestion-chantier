@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase'; // Ajoutez cet import
-import { 
-  LayoutDashboard, 
-  Hammer, 
-  Building2, 
+import {
+  LayoutDashboard,
+  Hammer,
+  Building2,
   LogOut,
   UserCog,
-  CheckCircle
+  CheckCircle,
+  DoorOpen
 } from 'lucide-react';
 import { DBService } from '../services/dbService';
 import TradesContent from './TradesContent';
@@ -16,6 +17,8 @@ import SiteManagement from './SiteManagement';
 import WorkerInterface from './WorkerInterface';
 import LoginModal from './LoginModal';
 import CompletedSites from './CompletedSites';
+import MenuiserieManagement from './menuiserie/MenuiserieManagement';
+import MenuisierInterface from './menuiserie/MenuisierInterface';
 
 function DashboardContent() {
   const [sites, setSites] = useState([]);
@@ -155,6 +158,9 @@ function AdminDashboard() {
           if (profile?.role === 'admin') {
             setUserRole('admin');
             setRealUserRole('admin');
+          } else if (profile?.role === 'menuisier') {
+            setUserRole('menuisier');
+            setRealUserRole('menuisier');
           } else {
             setUserRole('worker');
             setRealUserRole('worker');
@@ -204,6 +210,13 @@ function AdminDashboard() {
     );
   }
 
+  // Le menuisier dispose d'une interface dédiée et épurée : il ne voit QUE
+  // ses bons de menuiserie, sans le reste de l'application (chantiers, corps
+  // d'état, etc.) pour ne pas s'y perdre.
+  if (realUserRole === 'menuisier') {
+    return <MenuisierInterface />;
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-100">
       <div className="w-64 bg-white shadow-lg">
@@ -243,7 +256,30 @@ function AdminDashboard() {
                 <Building2 className="h-5 w-5 mr-2" />
                 Chantiers
               </button>
+              <button
+                onClick={() => setActivePage('menuiserie')}
+                className={`w-full flex items-center px-4 py-2 rounded-lg ${
+                  activePage === 'menuiserie' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100'
+                } transition duration-300`}
+              >
+                <DoorOpen className="h-5 w-5 mr-2" />
+                Menuiserie
+              </button>
             </>
+          )}
+
+          {/* Onglet Menuiserie pour les ouvriers — leur permet de consulter
+              et d'éditer tous les bons menuiserie (coordination chantier). */}
+          {userRole === 'worker' && (
+            <button
+              onClick={() => setActivePage('menuiserie')}
+              className={`w-full flex items-center px-4 py-2 rounded-lg ${
+                activePage === 'menuiserie' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100'
+              } transition duration-300`}
+            >
+              <DoorOpen className="h-5 w-5 mr-2" />
+              Menuiserie
+            </button>
           )}
 
           {/* Ne montrer le bouton de changement de rôle que pour les vrais admins */}
@@ -283,8 +319,14 @@ function AdminDashboard() {
             {activePage === 'dashboard' && <DashboardContent />}
             {activePage === 'trades' && <TradesContent />}
             {activePage === 'sites' && <SiteManagement />}
+            {activePage === 'menuiserie' && <MenuiserieManagement />}
             {activePage === 'completed' && <CompletedSites />}
           </>
+        ) : activePage === 'menuiserie' ? (
+          // Ouvrier sur l'onglet Menuiserie : on réutilise l'interface
+          // menuisier en mode "embedded" (sans header logout) + showAllBons
+          // (l'ouvrier voit TOUS les bons, pas seulement les siens).
+          <MenuisierInterface embedded showAllBons />
         ) : (
           <WorkerInterface isAdminInWorkerMode={realUserRole === 'admin'} />
         )}
