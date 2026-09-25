@@ -16,7 +16,8 @@ const PhotoUploadButton = ({ onFileSelected, siteId, taskId, className = "" }) =
       
     } catch (error) {
       console.error('Erreur lors du traitement:', error);
-      alert('Erreur lors du traitement de l\'image');
+      // Affiche la cause précise quand on la connaît (HEIC illisible, etc.)
+      alert(error?.message || 'Erreur lors du traitement de l\'image');
     } finally {
       setIsCompressing(false);
     }
