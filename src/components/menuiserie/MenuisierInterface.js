@@ -492,6 +492,7 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
                 onFileSelected={handlePhotoSelected}
                 siteId={selectedOrder.id}
                 taskId={draftIv.id}
+                multiple
               />
             </div>
             {(draftIv.photos || []).length > 0 && (
