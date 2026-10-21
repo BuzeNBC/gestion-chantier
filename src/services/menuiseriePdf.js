@@ -111,7 +111,11 @@ export async function generateMenuiseriePdf(order) {
     ['Adresse', order.address],
     ['Chargé d\'affaire', order.charge_affaire],
     ['N° de BT', order.bt_number],
-    order.scheduled_date ? ['Date prévue', new Date(order.scheduled_date).toLocaleDateString('fr-FR')] : null,
+    order.scheduled_date ? [
+      'Date prévue',
+      new Date(order.scheduled_date).toLocaleDateString('fr-FR')
+        + (order.scheduled_time ? ` à ${String(order.scheduled_time).slice(0, 5)}` : ''),
+    ] : null,
     order.completed_date ? ['Date de réalisation', new Date(order.completed_date).toLocaleDateString('fr-FR')] : null,
   ].filter(Boolean);
   const detailsHeight = Math.max(80, detailRows.length * 18 + 20);

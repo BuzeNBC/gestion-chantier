@@ -17,6 +17,8 @@ import { generateMenuiseriePdf, openOrDownloadPdf } from '../../services/menuise
 import PhotoUploadButton from '../PhotoUploadButton';
 import MeasurementsEditor from './MeasurementsEditor';
 import AttachmentsEditor from './AttachmentsEditor';
+import ScheduleModal from './ScheduleModal';
+import { scheduledLabel, todayStr, timeToMinutes } from '../../services/planningService';
 
 // Props :
 // - embedded (default false) : si true, n'affiche pas le header de page
@@ -49,6 +51,12 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
   // Sous-section active, comme côté admin : petites interventions /
   // commande de portes / terminés (les bons terminés quittent leur sous-section)
   const [tab, setTab] = useState('petites_interventions');
+  // Chip « Aujourd'hui » : n'affiche que les RDV du jour, toutes sous-sections
+  // confondues, triés par heure.
+  const [todayOnly, setTodayOnly] = useState(false);
+  // Menuisiers (pour choisir/changer le menuisier dans le modal horaire)
+  const [menuisiers, setMenuisiers] = useState([]);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
 
   const selectedOrder = orders.find((o) => o.id === selectedOrderId) || null;
 
@@ -61,8 +69,13 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
       const ivs = orderInterventions(o);
       const aggStatus = computeOrderStatus(ivs);
       // Sous-section : même découpage que côté admin (terminés à part,
-      // portes validées ou en attente de devis).
-      if (!orderMatchesTab(o, tab)) return false;
+      // devis validés ou en attente). Le chip « Aujourd'hui » court-circuite
+      // les onglets : tous les RDV du jour, sauf les bons annulés.
+      if (todayOnly) {
+        if (o.scheduled_date !== todayStr() || o.cancelled) return false;
+      } else if (!orderMatchesTab(o, tab)) {
+        return false;
+      }
       if (statusFilter !== 'all' && aggStatus !== statusFilter) return false;
       if (!term) return true;
       const haystack = [
@@ -80,8 +93,20 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
       return haystack.includes(term);
     })
       // Même tri que la liste admin : urgents > relances > date de réception.
-      .sort(compareOrders);
-  }, [orders, search, statusFilter, tab]);
+      // En mode « Aujourd'hui » : par heure de RDV (les « journée » en premier).
+      .sort(todayOnly
+        ? (a, b) => {
+          const ta = a.scheduled_time ? timeToMinutes(a.scheduled_time) : -1;
+          const tb = b.scheduled_time ? timeToMinutes(b.scheduled_time) : -1;
+          return ta - tb || compareOrders(a, b);
+        }
+        : compareOrders);
+  }, [orders, search, statusFilter, tab, todayOnly]);
+
+  const todayCount = useMemo(
+    () => orders.filter((o) => o.scheduled_date === todayStr() && !o.cancelled).length,
+    [orders],
+  );
 
   const loadData = useCallback(async () => {
     if (!user) return;
@@ -102,6 +127,14 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
       if (ordersRes.error) throw ordersRes.error;
       if (tradesRes.error) throw tradesRes.error;
       setOrders(ordersRes.data || []);
+      // Liste des menuisiers pour le modal horaire. Tolérant : si la policy
+      // `profiles` (migration 0015) n'est pas encore en place, on continue
+      // sans (le choix du menuisier est simplement masqué).
+      const { data: menuisiersData } = await supabase
+        .from('profiles')
+        .select('id, Name')
+        .eq('role', 'menuisier');
+      setMenuisiers(menuisiersData || []);
       const trade = findMenuiserieTrade(tradesRes.data || []);
       setInterventionOptions(sortInterventionOptions(trade?.tasks || []));
     } catch (error) {
@@ -136,6 +169,28 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
   const closeOrder = () => {
     setSelectedOrderId(null);
     closeIntervention();
+    setScheduleOpen(false);
+  };
+
+  // Planification depuis le modal horaire : écriture partielle (le trigger
+  // SQL trace qui a replanifié), puis mise à jour locale.
+  const saveSchedule = async (patch) => {
+    if (!selectedOrder) return;
+    const { error } = await supabase
+      .from('menuiserie_orders')
+      .update(patch)
+      .eq('id', selectedOrder.id);
+    if (error) {
+      console.error('Erreur planification :', error);
+      alert('Erreur lors de la planification du rendez-vous.');
+      return;
+    }
+    setOrders((prev) => prev.map((o) => (
+      o.id === selectedOrder.id
+        ? { ...o, ...patch, planning_updated_at: new Date().toISOString(), planning_updated_by: user?.id || null }
+        : o
+    )));
+    setScheduleOpen(false);
   };
 
   // Sauvegarde la draft intervention dans le bon (et applique éventuellement
@@ -314,6 +369,21 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
           {/* Barre de recherche + filtre statut */}
           {orders.length > 0 && (
             <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setTodayOnly((v) => !v)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border ${
+                  todayOnly
+                    ? 'bg-indigo-600 text-white border-indigo-600'
+                    : 'bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50'
+                }`}
+                title="Mes rendez-vous du jour, toutes sous-sections"
+              >
+                <Calendar className="h-4 w-4" />
+                Aujourd'hui
+                <span className={`px-1.5 py-0.5 rounded-full text-xs ${todayOnly ? 'bg-white/20' : 'bg-indigo-100'}`}>
+                  {todayCount}
+                </span>
+              </button>
               <div className="relative flex-1 min-w-[180px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-4 w-4" />
                 <input
@@ -347,7 +417,7 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
           )}
 
           {/* Compteur si un filtre est actif */}
-          {orders.length > 0 && (search || statusFilter !== 'all') && (
+          {orders.length > 0 && (search || statusFilter !== 'all' || todayOnly) && (
             <p className="text-xs text-gray-500">
               {filteredOrders.length} bon{filteredOrders.length > 1 ? 's' : ''} sur {orders.length}
             </p>
@@ -361,9 +431,11 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
 
           {orders.length > 0 && filteredOrders.length === 0 && (
             <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500 text-sm">
-              {search || statusFilter !== 'all'
-                ? 'Aucun bon ne correspond à ta recherche.'
-                : 'Aucun bon dans cette sous-section.'}
+              {todayOnly
+                ? "Aucun rendez-vous aujourd'hui."
+                : search || statusFilter !== 'all'
+                  ? 'Aucun bon ne correspond à ta recherche.'
+                  : 'Aucun bon dans cette sous-section.'}
             </div>
           )}
 
@@ -428,7 +500,7 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
                     )}
                     {orderReceivedDate(order) && order.scheduled_date && ' · '}
                     {order.scheduled_date && (
-                      <>Prévu le {new Date(order.scheduled_date).toLocaleDateString('fr-FR')}</>
+                      <span className="font-medium text-indigo-700">RDV {scheduledLabel(order)}</span>
                     )}
                   </p>
                 </div>
@@ -665,6 +737,36 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
             <AlertTriangle className="h-5 w-5" /> CHANTIER URGENT
           </p>
         )}
+        {/* Rendez-vous : le menuisier peut (re)planifier lui-même */}
+        {!selectedOrder.cancelled && (
+          <section className="bg-white rounded-lg shadow p-4 flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-2 text-sm">
+              <Calendar className="h-5 w-5 text-indigo-600 flex-shrink-0" />
+              {selectedOrder.scheduled_date ? (
+                <span className="font-semibold text-gray-800">{scheduledLabel(selectedOrder)}</span>
+              ) : (
+                <span className="text-gray-500 italic">Pas encore planifié</span>
+              )}
+            </div>
+            <button
+              onClick={() => setScheduleOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700"
+            >
+              <Clock className="h-4 w-4" />
+              {selectedOrder.scheduled_date ? "Modifier l'horaire" : 'Planifier'}
+            </button>
+          </section>
+        )}
+        {scheduleOpen && (
+          <ScheduleModal
+            order={selectedOrder}
+            orders={orders}
+            menuisiers={menuisiers}
+            onSave={saveSchedule}
+            onClose={() => setScheduleOpen(false)}
+          />
+        )}
+
         {/* Infos client (lecture seule) */}
         <section className="bg-white rounded-lg shadow p-5 space-y-2">
           <h2 className="font-semibold text-gray-800 mb-2">Détails</h2>

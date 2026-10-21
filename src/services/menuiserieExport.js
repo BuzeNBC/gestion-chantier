@@ -52,6 +52,8 @@ export const collectMonthRows = (orders, yearMonth, statuses = null) => {
         status: statusLabel(iv.status),
         rawStatus: iv.status,
         scheduled: order.scheduled_date || '',
+        scheduledTime: order.scheduled_time ? String(order.scheduled_time).slice(0, 5) : '',
+        duration: order.scheduled_time && order.duration_minutes ? order.duration_minutes : '',
         received: orderReceivedDate(order) || '',
         completed: iv.completed_date || '',
         measurementsCount: (iv.measurements || []).length,
@@ -95,7 +97,7 @@ export const exportMonthCsv = (orders, yearMonth, statuses = null) => {
   };
   const header = [
     'Mois', 'Adresse', 'Client', 'Téléphone', 'N° de BT', 'Chargé d\'affaire',
-    'Menuisier', 'Référence', 'Date', 'Date réception', 'Date prévue', 'Date réalisation',
+    'Menuisier', 'Référence', 'Date', 'Date réception', 'Date prévue', 'Heure prévue', 'Durée (min)', 'Date réalisation',
     'Intervention', 'Statut', 'Prix HT (€)', 'Facturation', 'Relances',
     'Nb cotes', 'Nb photos', 'Notes',
   ];
@@ -113,6 +115,8 @@ export const exportMonthCsv = (orders, yearMonth, statuses = null) => {
       fmtDate(r.date),
       fmtDate(r.received),
       fmtDate(r.scheduled),
+      r.scheduledTime,
+      r.duration,
       fmtDate(r.completed),
       esc(r.type),
       esc(r.status),

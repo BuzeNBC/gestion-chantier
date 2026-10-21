@@ -1,9 +1,12 @@
-import React, { useState, useEffect, useCallback, memo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Menu, MenuButton, MenuItems, MenuItem } from '@headlessui/react';
 import {
-  Plus, Edit, Trash, X, Search, Eye, MapPin, User, Calendar, FileText, Download,
-  Euro, Bell, AlertTriangle, Inbox, BadgeCheck, Ban, MoreVertical, Phone, Navigation,
+  Plus, Edit, Trash, Search, Eye, MapPin, User, Calendar, FileText, Download,
+  Euro, Bell, AlertTriangle, Inbox, BadgeCheck, Ban, MoreVertical, Phone, Navigation, Clock,
 } from 'lucide-react';
+import Modal from './MenuiserieModal';
+import ScheduleModal from './ScheduleModal';
+import { DURATION_OPTIONS, DEFAULT_DURATION, hhmm, durationLabel, scheduledLabel } from '../../services/planningService';
 import { supabase } from '../../services/supabase';
 import { DBService, STORES, generateUUID } from '../../services/dbService';
 import {
@@ -22,20 +25,6 @@ import { exportMonthCsv, exportMonthPdf, monthLabel } from '../../services/menui
 import MeasurementsEditor from './MeasurementsEditor';
 import InterventionLinesEditor from './InterventionLinesEditor';
 import AttachmentsEditor from './AttachmentsEditor';
-
-const Modal = memo(({ title, onClose, children, wide = false }) => (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
-    <div className={`bg-white p-4 sm:p-6 rounded-lg shadow-lg w-full ${wide ? 'max-w-3xl' : 'max-w-lg'} max-h-[92vh] overflow-y-auto`}>
-      <div className="flex justify-between items-center mb-5">
-        <h2 className="text-xl font-semibold">{title}</h2>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-          <X className="h-6 w-6" />
-        </button>
-      </div>
-      {children}
-    </div>
-  </div>
-));
 
 // Libellé d'un onglet (sous-sections + Devis validés + Terminés).
 const tabLabel = (tab) => (MENUISERIE_TABS.find(([v]) => v === tab) || [])[1] || tab;
@@ -113,6 +102,8 @@ const emptyForm = {
   description: '',
   assigned_to: '',
   scheduled_date: '',
+  scheduled_time: '',
+  duration_minutes: DEFAULT_DURATION,
   reference: '',
   bt_number: '',
   charge_affaire: '',
@@ -150,6 +141,8 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
     description: order.description || '',
     assigned_to: order.assigned_to || '',
     scheduled_date: order.scheduled_date || '',
+    scheduled_time: hhmm(order.scheduled_time),
+    duration_minutes: order.duration_minutes || DEFAULT_DURATION,
     reference: order.reference || '',
     bt_number: order.bt_number || '',
     charge_affaire: order.charge_affaire || '',
@@ -220,6 +213,9 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
       charge_affaire: effectiveCA || null,
       assigned_to: form.assigned_to || null,
       scheduled_date: form.scheduled_date || null,
+      // L'heure n'a de sens qu'avec une date ; sans heure = « journée ».
+      scheduled_time: form.scheduled_date && form.scheduled_time ? form.scheduled_time : null,
+      duration_minutes: Number(form.duration_minutes) || DEFAULT_DURATION,
       received_date: form.received_date || null,
       // La validation du devis ne concerne que les commandes de portes.
       devis_valide: form.category === 'commande_portes' ? form.devis_valide : false,
@@ -320,6 +316,32 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
             onChange={(e) => set('scheduled_date', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg"
           />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium mb-1">Heure</label>
+            <input
+              type="time"
+              step="900"
+              value={form.scheduled_time || ''}
+              onChange={(e) => set('scheduled_time', e.target.value)}
+              disabled={!form.scheduled_date}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg disabled:bg-gray-50 disabled:text-gray-400"
+              title={form.scheduled_date ? '' : "Choisis d'abord une date"}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Durée</label>
+            <select
+              value={form.duration_minutes}
+              onChange={(e) => set('duration_minutes', Number(e.target.value))}
+              disabled={!form.scheduled_date}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white disabled:bg-gray-50 disabled:text-gray-400"
+            >
+              {DURATION_OPTIONS.map((d) => <option key={d} value={d}>{durationLabel(d)}</option>)}
+            </select>
+          </div>
+          <p className="col-span-2 text-xs text-gray-500 -mt-1">Sans heure, le rendez-vous est « journée entière ».</p>
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">Date de réception du bon</label>
@@ -975,7 +997,7 @@ const OrderDetail = ({ order }) => {
         <div><span className="text-gray-500">N° de BT :</span> {order.bt_number}</div>
       )}
       {order.scheduled_date && (
-        <div><span className="text-gray-500">Prévu :</span> {new Date(order.scheduled_date).toLocaleDateString('fr-FR')}</div>
+        <div><span className="text-gray-500">Prévu :</span> {scheduledLabel(order)}</div>
       )}
       {orderReceivedDate(order) && (
         <div><span className="text-gray-500">Reçu le :</span> {new Date(orderReceivedDate(order)).toLocaleDateString('fr-FR')}</div>
@@ -1261,6 +1283,30 @@ function MenuiserieManagement() {
     } catch (error) {
       console.error('Erreur validation devis:', error);
       alert('Erreur lors de la validation du devis.');
+    }
+  };
+
+  // Planification (date / heure / durée / menuisier) depuis le modal
+  // ScheduleModal : écriture partielle, puis mise à jour locale.
+  const saveSchedule = async (order, patch) => {
+    try {
+      const { error } = await supabase
+        .from('menuiserie_orders')
+        .update(patch)
+        .eq('id', order.id);
+      if (error) throw error;
+      const assignedProfile = patch.assigned_to !== undefined
+        ? (menuisiers.find((m) => m.id === patch.assigned_to) || null)
+        : order.assigned_profile;
+      setOrders((prev) => prev.map((o) => (
+        o.id === order.id
+          ? { ...o, ...patch, assigned_profile: assignedProfile, planning_updated_at: new Date().toISOString() }
+          : o
+      )));
+      setModal({ type: null });
+    } catch (error) {
+      console.error('Erreur planification:', error);
+      alert('Erreur lors de la planification du rendez-vous.');
     }
   };
 
@@ -1612,9 +1658,9 @@ function MenuiserieManagement() {
                   <span className="text-xs">CA : {order.charge_affaire}</span>
                 )}
                 {order.scheduled_date && (
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1 font-medium text-gray-700">
                     <Calendar className="h-3.5 w-3.5" />
-                    {new Date(order.scheduled_date).toLocaleDateString('fr-FR')}
+                    {scheduledLabel(order, { withDuration: false })}
                   </span>
                 )}
                 {totalHt > 0 && (
@@ -1632,6 +1678,16 @@ function MenuiserieManagement() {
                 <a href={telHref(order.client_phone)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg" aria-label="Appeler" title={`Appeler ${order.client_phone}`}>
                   <Phone className="h-4 w-4" />
                 </a>
+              )}
+              {!order.cancelled && (
+                <button
+                  onClick={() => setModal({ type: 'schedule', data: order })}
+                  className={`p-2 rounded-lg ${order.scheduled_date ? 'text-indigo-600 hover:bg-indigo-50' : 'text-gray-400 hover:bg-gray-100 hover:text-indigo-600'}`}
+                  aria-label="Planifier"
+                  title={order.scheduled_date ? `Rendez-vous : ${scheduledLabel(order)} — modifier` : 'Planifier un rendez-vous'}
+                >
+                  <Clock className="h-4 w-4" />
+                </button>
               )}
               <button onClick={() => setModal({ type: 'detail', data: order })} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg" aria-label="Voir" title="Voir">
                 <Eye className="h-4 w-4" />
@@ -1686,6 +1742,15 @@ function MenuiserieManagement() {
             onCancel={() => setModal({ type: null })}
           />
         </Modal>
+      )}
+      {modal.type === 'schedule' && (
+        <ScheduleModal
+          order={modal.data}
+          orders={orders}
+          menuisiers={menuisiers}
+          onSave={(patch) => saveSchedule(modal.data, patch)}
+          onClose={() => setModal({ type: null })}
+        />
       )}
       {modal.type === 'cancel' && (
         <Modal title={`Annulation — ${modal.data.client_name || 'bon'}`} onClose={() => setModal({ type: null })}>
