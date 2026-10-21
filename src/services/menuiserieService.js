@@ -40,10 +40,12 @@ export const MENUISERIE_PHOTO_CATEGORIES = {
   autre: 'Autre',
 };
 
-// Sous-sections du module Menuiserie (onglets côté admin)
+// Sous-sections du module Menuiserie (onglets admin + menuisier).
+// NB : la valeur technique `commande_portes` est conservée en base (contrainte
+// CHECK de la migration 0009) ; seul le libellé affiché a changé.
 export const MENUISERIE_CATEGORIES = {
   petites_interventions: 'Petites interventions',
-  commande_portes: 'Commande de portes',
+  commande_portes: 'Chantiers neufs',
 };
 
 export const orderCategory = (order) =>
@@ -54,13 +56,15 @@ export const categoryLabel = (category) =>
 
 // Onglets affichés côté admin ET côté menuisier (même découpage partout) :
 //   - Petites interventions : bons en cours de cette sous-section
-//   - Commande de portes    : commandes en ATTENTE de validation du devis
-//   - Portes validées       : commandes dont le devis est validé -> production
+//   - Chantiers neufs       : chantiers en ATTENTE de validation du devis
+//   - Devis validés         : chantiers neufs dont le devis est validé -> production
 //   - Terminés              : tous les bons dont les interventions sont finies
+//   - Terminé et Facturé    : bons clos déjà facturés
+// (valeurs techniques inchangées : `commande_portes`, `portes_validees`)
 export const MENUISERIE_TABS = [
   ['petites_interventions', 'Petites interventions'],
-  ['commande_portes', 'Commande de portes'],
-  ['portes_validees', 'Portes validées'],
+  ['commande_portes', 'Chantiers neufs'],
+  ['portes_validees', 'Devis validés'],
   ['termines', 'Terminés'],
   ['termines_factures', 'Terminé et Facturé'],
 ];
@@ -220,6 +224,46 @@ export const fmtEuro = (n) => {
 export const typeLabel = (type) => {
   if (!type) return MENUISERIE_TYPES.autre;
   return MENUISERIE_TYPES[type] || type;
+};
+
+// --- Contact client & itinéraire ---------------------------------------------
+// Numéro nettoyé pour un lien tel:/sms: (espaces, points, tirets retirés ;
+// « 06… » -> « +336… »). Retourne null si rien d'exploitable.
+export const normalizePhone = (phone) => {
+  const digits = String(phone || '').replace(/[^\d+]/g, '');
+  if (!digits) return null;
+  if (digits.startsWith('+')) return digits;
+  if (digits.startsWith('00')) return '+' + digits.slice(2);
+  if (digits.length === 10 && digits.startsWith('0')) return '+33' + digits.slice(1);
+  return digits;
+};
+export const telHref = (phone) => {
+  const n = normalizePhone(phone);
+  return n ? `tel:${n}` : null;
+};
+export const smsHref = (phone) => {
+  const n = normalizePhone(phone);
+  return n ? `sms:${n}` : null;
+};
+
+export const isIOS = () =>
+  typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+// Liens d'itinéraire sans API : Google Maps (ouvre l'app sur Android/iOS,
+// le site sur PC) et Apple Plans (iOS). Destination = coordonnées GPS si le
+// bon est localisé, sinon l'adresse en texte.
+export const directionsUrls = (order) => {
+  const hasCoords = Number.isFinite(order?.latitude) && Number.isFinite(order?.longitude);
+  const dest = hasCoords
+    ? `${order.latitude},${order.longitude}`
+    : encodeURIComponent(order?.address || '');
+  if (!dest) return null;
+  return {
+    google: `https://www.google.com/maps/dir/?api=1&destination=${dest}&travelmode=driving`,
+    apple: hasCoords
+      ? `https://maps.apple.com/?daddr=${dest}&dirflg=d`
+      : `https://maps.apple.com/?daddr=${dest}`,
+  };
 };
 
 // Trie les types d'intervention par ordre alphabétique français (insensible

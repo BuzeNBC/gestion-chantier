@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, memo } from 'react';
+import { Menu, MenuButton, MenuItems, MenuItem } from '@headlessui/react';
 import {
   Plus, Edit, Trash, X, Search, Eye, MapPin, User, Calendar, FileText, Download,
-  Euro, Bell, AlertTriangle, Inbox, BadgeCheck, Ban,
+  Euro, Bell, AlertTriangle, Inbox, BadgeCheck, Ban, MoreVertical, Phone, Navigation,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { DBService, STORES, generateUUID } from '../../services/dbService';
@@ -14,7 +15,7 @@ import {
   MENUISERIE_CATEGORIES, orderCategory, categoryLabel, compareOrders, orderReceivedDate,
   sortInterventionOptions, MENUISERIE_TABS, orderMatchesTab, orderFactureMonth,
   relanceBadgeStyle, relanceBorderStyle, orderRelances, newRelance,
-  orderTotalHt, fmtEuro,
+  orderTotalHt, fmtEuro, telHref, directionsUrls,
 } from '../../services/menuiserieService';
 import { generateMenuiseriePdf, openOrDownloadPdf } from '../../services/menuiseriePdf';
 import { exportMonthCsv, exportMonthPdf, monthLabel } from '../../services/menuiserieExport';
@@ -36,8 +37,74 @@ const Modal = memo(({ title, onClose, children, wide = false }) => (
   </div>
 ));
 
-// Libellé d'un onglet (sous-sections + Portes validées + Terminés).
+// Libellé d'un onglet (sous-sections + Devis validés + Terminés).
 const tabLabel = (tab) => (MENUISERIE_TABS.find(([v]) => v === tab) || [])[1] || tab;
+
+// Menu « ⋯ » d'une ligne de bon : regroupe les actions secondaires pour ne
+// garder que Voir / Modifier visibles (lisibilité, surtout sur téléphone).
+const menuItemClass = 'flex w-full items-center gap-2 px-3 py-2 text-sm text-left data-[focus]:bg-gray-100 rounded-md';
+const RowActionsMenu = ({ order, actions }) => {
+  const isChantierNeuf = orderCategory(order) === 'commande_portes';
+  const tel = telHref(order.client_phone);
+  const dirs = directionsUrls(order);
+  return (
+    <Menu>
+      <MenuButton className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 data-[open]:bg-gray-200" aria-label="Plus d'actions" title="Plus d'actions">
+        <MoreVertical className="h-4 w-4" />
+      </MenuButton>
+      <MenuItems anchor="bottom end" className="z-50 mt-1 w-60 rounded-lg bg-white p-1 shadow-lg ring-1 ring-black/5 focus:outline-none [--anchor-gap:4px]">
+        <MenuItem>
+          <button onClick={() => actions.billing(order)} className={`${menuItemClass} text-emerald-700`}>
+            <Euro className="h-4 w-4" /> Facturation
+          </button>
+        </MenuItem>
+        <MenuItem>
+          <button onClick={() => actions.relances(order)} className={`${menuItemClass} text-amber-700`}>
+            <Bell className="h-4 w-4" /> Relances
+          </button>
+        </MenuItem>
+        <MenuItem>
+          <button onClick={() => actions.toggleUrgent(order)} className={`${menuItemClass} ${order.is_urgent ? 'text-red-700' : 'text-gray-700'}`}>
+            <AlertTriangle className="h-4 w-4" /> {order.is_urgent ? "Retirer l'urgence" : 'Marquer urgent'}
+          </button>
+        </MenuItem>
+        {isChantierNeuf && (
+          <MenuItem>
+            <button onClick={() => actions.devisValide(order)} className={`${menuItemClass} text-teal-700`}>
+              <BadgeCheck className="h-4 w-4" /> {order.devis_valide ? 'Devis validé — modifier' : 'Valider le devis'}
+            </button>
+          </MenuItem>
+        )}
+        {(tel || dirs) && <div className="my-1 border-t border-gray-100" />}
+        {tel && (
+          <MenuItem>
+            <a href={tel} className={`${menuItemClass} text-green-700`}>
+              <Phone className="h-4 w-4" /> Appeler {order.client_phone}
+            </a>
+          </MenuItem>
+        )}
+        {dirs && (
+          <MenuItem>
+            <a href={dirs.google} target="_blank" rel="noopener noreferrer" className={`${menuItemClass} text-blue-700`}>
+              <Navigation className="h-4 w-4" /> Itinéraire
+            </a>
+          </MenuItem>
+        )}
+        <div className="my-1 border-t border-gray-100" />
+        <MenuItem>
+          <button onClick={() => actions.cancel(order)} className={`${menuItemClass} text-gray-700`}>
+            <Ban className="h-4 w-4" /> {order.cancelled ? "Annulation — voir / rétablir" : 'Annuler le bon'}
+          </button>
+        </MenuItem>
+        <MenuItem>
+          <button onClick={() => actions.remove(order)} className={`${menuItemClass} text-red-600`}>
+            <Trash className="h-4 w-4" /> Supprimer
+          </button>
+        </MenuItem>
+      </MenuItems>
+    </Menu>
+  );
+};
 
 const emptyForm = {
   client_name: '',
@@ -371,7 +438,7 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
             />
             <BadgeCheck className={`h-4 w-4 ${form.devis_valide ? 'text-teal-600' : 'text-gray-400'}`} />
             <span className={`text-sm font-medium ${form.devis_valide ? 'text-teal-700' : 'text-gray-700'}`}>
-              Devis validé — la commande passe dans « Portes validées » (production)
+              Devis validé — le chantier passe dans « Devis validés » (production)
             </span>
           </label>
           {form.devis_valide && (
@@ -717,7 +784,7 @@ const DevisValideForm = ({ order, onSave, onCancel }) => {
       <p className="text-sm text-gray-600">
         {order.devis_valide
           ? 'Ce devis est validé. Tu peux corriger la date ou annuler la validation.'
-          : 'La commande passera dans « Portes validées » (prête pour production).'}
+          : 'Le chantier passera dans « Devis validés » (prêt pour production).'}
       </p>
       <div>
         <label className="block text-sm font-medium mb-1">Date de validation du devis *</label>
@@ -881,8 +948,26 @@ const OrderDetail = ({ order }) => {
           {statusLabel(computeOrderStatus(orderInterventions(order)))}
         </span>
       </div>
-      {order.client_phone && <div><span className="text-gray-500">Tél :</span> {order.client_phone}</div>}
-      {order.address && <div className="col-span-2"><span className="text-gray-500">Adresse :</span> {order.address}</div>}
+      {order.client_phone && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span><span className="text-gray-500">Tél :</span> {order.client_phone}</span>
+          {telHref(order.client_phone) && (
+            <a href={telHref(order.client_phone)} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800 hover:bg-green-200">
+              <Phone className="h-3 w-3" /> Appeler
+            </a>
+          )}
+        </div>
+      )}
+      {order.address && (
+        <div className="col-span-2 flex items-center gap-2 flex-wrap">
+          <span><span className="text-gray-500">Adresse :</span> {order.address}</span>
+          {directionsUrls(order) && (
+            <a href={directionsUrls(order).google} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-blue-100 text-blue-800 hover:bg-blue-200">
+              <Navigation className="h-3 w-3" /> Itinéraire
+            </a>
+          )}
+        </div>
+      )}
       {order.charge_affaire && (
         <div><span className="text-gray-500">Chargé d'affaire :</span> {order.charge_affaire}</div>
       )}
@@ -1036,7 +1121,6 @@ function MenuiserieManagement() {
   const [modal, setModal] = useState({ type: null, data: null });
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [typeFilter, setTypeFilter] = useState('all');
   const [billingFilter, setBillingFilter] = useState('all');
   // Sous-section active (onglet) : petites interventions / commande de portes
   const [category, setCategory] = useState('petites_interventions');
@@ -1240,8 +1324,6 @@ function MenuiserieManagement() {
       (o.bt_number || '').toLowerCase().includes(term);
     const aggStatus = computeOrderStatus(ivs);
     const matchesStatus = statusFilter === 'all' || aggStatus === statusFilter;
-    // Le filtre type matche si N'IMPORTE QUELLE intervention du bon a ce type.
-    const matchesType = typeFilter === 'all' || ivs.some((iv) => iv.type === typeFilter);
     // Le statut de facturation « effectif » : un bon non terminé n'est pas
     // « à facturer » (c'est une consigne pour la secrétaire, pas un défaut).
     const effBilling = effectiveBillingStatus(o);
@@ -1252,7 +1334,7 @@ function MenuiserieManagement() {
         : billingFilter === 'pending'
           ? effBilling !== null && effBilling !== 'facture'
           : effBilling === billingFilter);
-    return matchesSearch && matchesStatus && matchesType && matchesBilling;
+    return matchesSearch && matchesStatus && matchesBilling;
   });
 
   // Tri partagé avec l'interface menuisier (cf. compareOrders) :
@@ -1283,15 +1365,6 @@ function MenuiserieManagement() {
     },
     { total: 0, todo: 0, inProgress: 0, completed: 0, aTraiter: 0, relances: 0 },
   );
-
-  // Options du filtre « type » : tâches du corps d'état + types présents dans
-  // les interventions des bons (au cas où une tâche aurait été renommée/supprimée).
-  const typeFilterOptions = sortInterventionOptions(Array.from(
-    new Set([
-      ...interventionOptions,
-      ...categoryOrders.flatMap((o) => orderInterventions(o).map((iv) => iv.type)).filter(Boolean),
-    ])
-  ));
 
   if (isLoading) {
     return (
@@ -1394,10 +1467,6 @@ function MenuiserieManagement() {
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="flex-1 sm:flex-none min-w-[30%] sm:min-w-0 px-2 lg:px-3 py-2 text-sm border border-gray-300 rounded-lg">
           <option value="all">Tous les statuts</option>
           {Object.entries(MENUISERIE_STATUS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
-        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="flex-1 sm:flex-none min-w-[30%] sm:min-w-0 px-2 lg:px-3 py-2 text-sm border border-gray-300 rounded-lg">
-          <option value="all">Tous les types</option>
-          {typeFilterOptions.map((t) => <option key={t} value={t}>{typeLabel(t)}</option>)}
         </select>
         <select value={billingFilter} onChange={(e) => setBillingFilter(e.target.value)} className="flex-1 sm:flex-none min-w-[30%] sm:min-w-0 px-2 lg:px-3 py-2 text-sm border border-gray-300 rounded-lg">
           <option value="all">Toute facturation</option>
@@ -1558,48 +1627,29 @@ function MenuiserieManagement() {
                 </p>
               )}
             </div>
-            <div className="flex items-center gap-1 flex-shrink-0 flex-wrap justify-end self-end sm:self-auto">
-              {orderCategory(order) === 'commande_portes' && (
-                <button
-                  onClick={() => setModal({ type: 'devis_valide', data: order })}
-                  className={`p-2 rounded-lg ${order.devis_valide ? 'text-teal-600 bg-teal-100 hover:bg-teal-200' : 'text-gray-400 hover:bg-gray-100 hover:text-teal-600'}`}
-                  aria-label={order.devis_valide ? 'Modifier la validation du devis' : 'Valider le devis'}
-                  title={order.devis_valide ? 'Devis validé — cliquer pour modifier/annuler' : 'Valider le devis (prêt pour production)'}
-                >
-                  <BadgeCheck className="h-4 w-4" />
-                </button>
+            <div className="flex items-center gap-1 flex-shrink-0 self-end sm:self-auto">
+              {telHref(order.client_phone) && (
+                <a href={telHref(order.client_phone)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg" aria-label="Appeler" title={`Appeler ${order.client_phone}`}>
+                  <Phone className="h-4 w-4" />
+                </a>
               )}
-              <button
-                onClick={() => toggleUrgent(order)}
-                className={`p-2 rounded-lg ${order.is_urgent ? 'text-red-600 bg-red-100 hover:bg-red-200' : 'text-gray-400 hover:bg-gray-100 hover:text-red-600'}`}
-                aria-label={order.is_urgent ? "Retirer l'urgence" : 'Marquer urgent'}
-                title={order.is_urgent ? "Retirer l'urgence" : 'Marquer urgent'}
-              >
-                <AlertTriangle className="h-4 w-4" />
-              </button>
-              <button onClick={() => setModal({ type: 'billing', data: order })} className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-lg" aria-label="Facturation">
-                <Euro className="h-4 w-4" />
-              </button>
-              <button onClick={() => setModal({ type: 'relances', data: order })} className="p-2 text-amber-600 hover:bg-amber-50 rounded-lg" aria-label="Relances">
-                <Bell className="h-4 w-4" />
-              </button>
-              <button onClick={() => setModal({ type: 'detail', data: order })} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg" aria-label="Voir">
+              <button onClick={() => setModal({ type: 'detail', data: order })} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg" aria-label="Voir" title="Voir">
                 <Eye className="h-4 w-4" />
               </button>
-              <button onClick={() => setModal({ type: 'edit', data: order })} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" aria-label="Modifier">
+              <button onClick={() => setModal({ type: 'edit', data: order })} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" aria-label="Modifier" title="Modifier">
                 <Edit className="h-4 w-4" />
               </button>
-              <button
-                onClick={() => setModal({ type: 'cancel', data: order })}
-                className={`p-2 rounded-lg ${order.cancelled ? 'text-gray-700 bg-gray-200 hover:bg-gray-300' : 'text-gray-400 hover:bg-gray-100 hover:text-rose-600'}`}
-                aria-label={order.cancelled ? "Voir/modifier l'annulation" : 'Annuler le bon'}
-                title={order.cancelled ? "Bon annulé — voir la raison, corriger ou rétablir" : 'Annuler le bon (sans le supprimer)'}
-              >
-                <Ban className="h-4 w-4" />
-              </button>
-              <button onClick={() => handleDelete(order.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg" aria-label="Supprimer">
-                <Trash className="h-4 w-4" />
-              </button>
+              <RowActionsMenu
+                order={order}
+                actions={{
+                  billing: (o) => setModal({ type: 'billing', data: o }),
+                  relances: (o) => setModal({ type: 'relances', data: o }),
+                  toggleUrgent,
+                  devisValide: (o) => setModal({ type: 'devis_valide', data: o }),
+                  cancel: (o) => setModal({ type: 'cancel', data: o }),
+                  remove: (o) => handleDelete(o.id),
+                }}
+              />
             </div>
           </div>
           </React.Fragment>
@@ -1647,7 +1697,7 @@ function MenuiserieManagement() {
         </Modal>
       )}
       {modal.type === 'devis_valide' && (
-        <Modal title={`Devis — ${modal.data.client_name || 'commande de portes'}`} onClose={() => setModal({ type: null })}>
+        <Modal title={`Devis — ${modal.data.client_name || 'chantier neuf'}`} onClose={() => setModal({ type: null })}>
           <DevisValideForm
             order={modal.data}
             onSave={(patch) => saveDevisValide(modal.data, patch)}

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   ArrowLeft, MapPin, Phone, User, Ruler, Camera, CheckCircle,
   Clock, Save, Trash2, ChevronRight, LogOut, FileText, X, Plus, Search,
-  AlertTriangle, Calendar,
+  AlertTriangle, Calendar, Navigation,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -10,7 +10,8 @@ import {
   MENUISERIE_STATUS, MENUISERIE_STATUS_STYLES, MENUISERIE_PHOTO_CATEGORIES,
   typeLabel, statusLabel, computeOrderStatus, orderInterventions, newIntervention,
   findMenuiserieTrade, compareOrders, orderReceivedDate, sortInterventionOptions,
-  MENUISERIE_TABS, orderMatchesTab,
+  MENUISERIE_TABS, orderMatchesTab, orderCategory, categoryLabel,
+  telHref, smsHref, directionsUrls, isIOS,
 } from '../../services/menuiserieService';
 import { generateMenuiseriePdf, openOrDownloadPdf } from '../../services/menuiseriePdf';
 import PhotoUploadButton from '../PhotoUploadButton';
@@ -370,13 +371,18 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
             const ivs = orderInterventions(order);
             const aggStatus = computeOrderStatus(ivs);
             const done = ivs.filter((i) => i.status === 'completed').length;
+            const tel = telHref(order.client_phone);
+            const dirs = directionsUrls(order);
             return (
-              <button
+              <div
                 key={order.id}
-                onClick={() => setSelectedOrderId(order.id)}
-                className={`w-full rounded-lg shadow p-4 flex items-center justify-between text-left hover:shadow-md transition-shadow ${
+                className={`rounded-lg shadow hover:shadow-md transition-shadow ${
                   order.is_urgent ? 'bg-red-50 border-l-4 border-red-600' : 'bg-white'
                 }`}
+              >
+              <button
+                onClick={() => setSelectedOrderId(order.id)}
+                className="w-full p-4 flex items-center justify-between text-left"
               >
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -396,10 +402,10 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
                     {order.bt_number && (
                       <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded">BT {order.bt_number}</span>
                     )}
-                    {order.category === 'commande_portes' && (
-                      <span className="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full">Commande de portes</span>
+                    {orderCategory(order) === 'commande_portes' && (
+                      <span className="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full">{categoryLabel('commande_portes')}</span>
                     )}
-                    {order.category === 'commande_portes' && order.devis_valide && (
+                    {orderCategory(order) === 'commande_portes' && order.devis_valide && (
                       <span className="flex items-center gap-1 text-xs bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full font-semibold">
                         <CheckCircle className="h-3 w-3" /> Devis validé
                       </span>
@@ -428,6 +434,21 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
                 </div>
                 <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0" />
               </button>
+              {(tel || dirs) && (
+                <div className="flex gap-2 px-4 pb-3 -mt-1">
+                  {tel && (
+                    <a href={tel} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700">
+                      <Phone className="h-4 w-4" /> Appeler
+                    </a>
+                  )}
+                  {dirs && (
+                    <a href={dirs.google} target="_blank" rel="noopener noreferrer" className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700">
+                      <Navigation className="h-4 w-4" /> Itinéraire
+                    </a>
+                  )}
+                </div>
+              )}
+              </div>
             );
           })}
         </main>
@@ -653,14 +674,36 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
             </p>
           )}
           {selectedOrder.client_phone && (
-            <p className="text-sm flex items-center gap-2 text-gray-700">
+            <div className="text-sm flex items-center gap-2 text-gray-700 flex-wrap">
               <Phone className="h-4 w-4 text-gray-400" /> {selectedOrder.client_phone}
-            </p>
+              {telHref(selectedOrder.client_phone) && (
+                <>
+                  <a href={telHref(selectedOrder.client_phone)} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-medium hover:bg-green-700">
+                    <Phone className="h-3.5 w-3.5" /> Appeler
+                  </a>
+                  <a href={smsHref(selectedOrder.client_phone)} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 text-xs font-medium hover:bg-gray-200">
+                    SMS
+                  </a>
+                </>
+              )}
+            </div>
           )}
           {selectedOrder.address && (
-            <p className="text-sm flex items-center gap-2 text-gray-700">
+            <div className="text-sm flex items-center gap-2 text-gray-700 flex-wrap">
               <MapPin className="h-4 w-4 text-gray-400" /> {selectedOrder.address}
-            </p>
+              {directionsUrls(selectedOrder) && (
+                <>
+                  <a href={directionsUrls(selectedOrder).google} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700">
+                    <Navigation className="h-3.5 w-3.5" /> Itinéraire
+                  </a>
+                  {isIOS() && (
+                    <a href={directionsUrls(selectedOrder).apple} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 text-xs font-medium hover:bg-gray-200">
+                      Plans
+                    </a>
+                  )}
+                </>
+              )}
+            </div>
           )}
           {(selectedOrder.charge_affaire || selectedOrder.bt_number || orderReceivedDate(selectedOrder)) && (
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-700 pt-2 border-t mt-2">
