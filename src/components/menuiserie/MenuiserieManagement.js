@@ -16,6 +16,7 @@ import Modal from './MenuiserieModal';
 import ScheduleModal from './ScheduleModal';
 import OrderDetail from './OrderDetail';
 import GeocodeProgress from './GeocodeProgress';
+import OrderSidePanel from './OrderSidePanel';
 import useOrdersRealtime from '../../hooks/useOrdersRealtime';
 import useAutoGeocode from '../../hooks/useAutoGeocode';
 import { DURATION_OPTIONS, DEFAULT_DURATION, hhmm, durationLabel, scheduledLabel } from '../../services/planningService';
@@ -1791,16 +1792,44 @@ function MenuiserieManagement() {
         </Modal>
       )}
       {modal.type === 'map' && (
-        <Modal title={`Carte — ${tabLabel(category)}`} onClose={() => setModal({ type: null })} wide>
+        <Modal title={`Carte — ${tabLabel(category)}`} onClose={() => setModal({ type: null })} size="xl">
           <GeocodeBackfill orders={orders} onDone={() => loadData({ silent: true })} />
-          <Suspense fallback={<div className="h-[65vh] flex items-center justify-center"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" /></div>}>
-            <OrdersMap
-              orders={categoryOrders}
-              fit
-              onSelect={(o) => setModal({ type: 'detail', data: o })}
-              className="h-[65vh]"
-            />
-          </Suspense>
+          <div className="flex flex-col lg:flex-row gap-4 items-start">
+            <div className="flex-1 min-w-0 w-full">
+              <Suspense fallback={<div className="h-[70vh] flex items-center justify-center"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" /></div>}>
+                <OrdersMap
+                  orders={categoryOrders}
+                  fit
+                  selectedId={modal.selectedId || null}
+                  onSelect={(o) => setModal((m) => ({ ...m, selectedId: o.id }))}
+                  className="h-[70vh]"
+                />
+              </Suspense>
+            </div>
+            {modal.selectedId && orders.find((o) => o.id === modal.selectedId) && (
+              <OrderSidePanel
+                order={orders.find((o) => o.id === modal.selectedId)}
+                heightClass="max-h-[70vh]"
+                onClose={() => setModal((m) => ({ ...m, selectedId: null }))}
+                actions={(
+                  <>
+                    <button
+                      onClick={() => setModal({ type: 'edit', data: orders.find((o) => o.id === modal.selectedId) })}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700"
+                    >
+                      <Edit className="h-3.5 w-3.5" /> Modifier
+                    </button>
+                    <button
+                      onClick={() => setModal({ type: 'schedule', data: orders.find((o) => o.id === modal.selectedId), returnTo: modal })}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700"
+                    >
+                      <Clock className="h-3.5 w-3.5" /> Planifier
+                    </button>
+                  </>
+                )}
+              />
+            )}
+          </div>
           <p className="text-xs text-gray-500 mt-2">
             Rouge = urgent · orange = relancé · bleu = normal · gris = clos.
             {' '}{categoryOrders.filter((o) => o.address && !hasCoords(o)).length} bon(s) de cet onglet sans position.

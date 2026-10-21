@@ -14,7 +14,7 @@ import AttachmentsEditor from './AttachmentsEditor';
 // Détail complet d'un bon (lecture seule) côté admin : infos, facturation,
 // relances, pièces jointes, interventions (cotes, photos, notes) + rapport PDF.
 // Utilisé dans la liste admin et depuis le planning.
-const OrderDetail = ({ order }) => {
+const OrderDetail = ({ order, hideBilling = false }) => {
   const [pdfGenerating, setPdfGenerating] = useState(false);
 
   const handleGeneratePdf = async () => {
@@ -111,6 +111,7 @@ const OrderDetail = ({ order }) => {
           )}
         </div>
       )}
+      {!hideBilling && (
       <div>
         <span className="text-gray-500">Facturation :</span>{' '}
         {effectiveBillingStatus(order) ? (
@@ -127,7 +128,8 @@ const OrderDetail = ({ order }) => {
           <span className="text-xs text-gray-400 italic">bon non terminé</span>
         )}
       </div>
-      {orderTotalHt(order) > 0 && (
+      )}
+      {!hideBilling && orderTotalHt(order) > 0 && (
         <div><span className="text-gray-500">Total HT :</span> <span className="font-semibold">{fmtEuro(orderTotalHt(order))}</span></div>
       )}
     </div>
@@ -178,7 +180,7 @@ const OrderDetail = ({ order }) => {
               <span className="font-medium text-blue-700">{typeLabel(iv.type)}</span>
             </div>
             <div className="flex items-center gap-2">
-              {Number.isFinite(Number(iv.price_ht)) && iv.price_ht !== null && iv.price_ht !== '' && (
+              {!hideBilling && Number.isFinite(Number(iv.price_ht)) && iv.price_ht !== null && iv.price_ht !== '' && (
                 <span className="text-sm font-semibold text-gray-800">{fmtEuro(iv.price_ht)}</span>
               )}
               <span className={`px-2 py-0.5 rounded-full text-xs ${MENUISERIE_STATUS_STYLES[iv.status] || ''}`}>

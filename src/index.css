@@ -35,6 +35,7 @@ code {
 .fc-event.fc-urgent { border-left: 4px solid #dc2626 !important; }
 .fc-event.fc-conflict { outline: 2px dashed #f59e0b; outline-offset: -2px; }
 .fc-event.fc-done { opacity: 0.5; }
+.fc-event.fc-selected { box-shadow: 0 0 0 3px #111827; z-index: 5; }
 @media (max-width: 767px) {
   .fc .fc-toolbar { flex-wrap: wrap; gap: 0.4rem; }
   .fc .fc-toolbar-title { font-size: 1rem; }

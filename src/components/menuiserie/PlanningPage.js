@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { AlertTriangle, Users } from 'lucide-react';
+import { AlertTriangle, Users, Clock, FileText } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { describeDbError } from '../../services/dbErrors';
 import { useAuth } from '../../contexts/AuthContext';
@@ -13,6 +13,7 @@ import UnscheduledPanel from './UnscheduledPanel';
 import ScheduleModal from './ScheduleModal';
 import Modal from './MenuiserieModal';
 import OrderDetail from './OrderDetail';
+import OrderSidePanel from './OrderSidePanel';
 
 // Page « Planning » partagée : calendrier commun à tous les menuisiers,
 // géré par l'admin ET les menuisiers. Charge ses propres données, s'abonne
@@ -51,6 +52,8 @@ export default function PlanningPage({ canEdit = false, embedded = false, showDe
   const [showDone, setShowDone] = useState(false);
   const [schedule, setSchedule] = useState(null);   // { order, defaults }
   const [detailOrder, setDetailOrder] = useState(null);
+  // Grand écran : bon sélectionné, affiché dans le volet latéral
+  const [selectedId, setSelectedId] = useState(null);
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
@@ -100,8 +103,14 @@ export default function PlanningPage({ canEdit = false, embedded = false, showDe
   );
   const conflicts = useMemo(() => findConflicts(scheduled.filter(isPlannable)), [scheduled]);
   const events = useMemo(
-    () => scheduled.filter(matchesFilter).map((o) => orderToEvent(o, { colorOf, conflicts, done: !isPlannable(o) })),
-    [scheduled, matchesFilter, colorOf, conflicts],
+    () => scheduled.filter(matchesFilter).map((o) => orderToEvent(o, {
+      colorOf, conflicts, done: !isPlannable(o), selected: o.id === selectedId,
+    })),
+    [scheduled, matchesFilter, colorOf, conflicts, selectedId],
+  );
+  const selectedOrder = useMemo(
+    () => (selectedId ? orders.find((o) => o.id === selectedId) || null : null),
+    [orders, selectedId],
   );
   const unscheduled = useMemo(
     () => orders.filter((o) => !o.scheduled_date && isPlannable(o) && matchesFilter(o)),
@@ -227,6 +236,8 @@ export default function PlanningPage({ canEdit = false, embedded = false, showDe
             isMobile={isMobile}
             menuisiersById={menuisiersById}
             onEventClick={(order) => {
+              // Grand écran : le bon complet s'affiche à côté du calendrier.
+              if (!isMobile) { setSelectedId(order.id); return; }
               if (canEdit) openSchedule(order);
               else if (onOpenOrder) onOpenOrder(order);
               else if (showDetail) setDetailOrder(order);
@@ -236,7 +247,33 @@ export default function PlanningPage({ canEdit = false, embedded = false, showDe
             onDateClick={onDateClick}
           />
         </div>
-        {canEdit && (
+        {!isMobile && selectedOrder ? (
+          <OrderSidePanel
+            order={selectedOrder}
+            hideBilling={embedded}
+            onClose={() => setSelectedId(null)}
+            actions={(
+              <>
+                {canEdit && !selectedOrder.cancelled && (
+                  <button
+                    onClick={() => openSchedule(selectedOrder)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700"
+                  >
+                    <Clock className="h-3.5 w-3.5" /> {selectedOrder.scheduled_date ? "Modifier l'horaire" : 'Planifier'}
+                  </button>
+                )}
+                {onOpenOrder && (
+                  <button
+                    onClick={() => onOpenOrder(selectedOrder)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700"
+                  >
+                    <FileText className="h-3.5 w-3.5" /> Ouvrir la fiche
+                  </button>
+                )}
+              </>
+            )}
+          />
+        ) : canEdit && (
           <UnscheduledPanel
             orders={unscheduled}
             isMobile={isMobile}

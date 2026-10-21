@@ -100,7 +100,7 @@ export const findConflicts = (orders = []) => {
 };
 
 // Bon -> événement FullCalendar. `start` sans « Z » = heure locale.
-export const orderToEvent = (o, { colorOf, conflicts, done = false } = {}) => {
+export const orderToEvent = (o, { colorOf, conflicts, done = false, selected = false } = {}) => {
   const allDay = !o.scheduled_time;
   const start = allDay ? o.scheduled_date : `${o.scheduled_date}T${hhmm(o.scheduled_time)}:00`;
   const end = allDay
@@ -121,6 +121,7 @@ export const orderToEvent = (o, { colorOf, conflicts, done = false } = {}) => {
       o.is_urgent && 'fc-urgent',
       conflicts?.has?.(o.id) && 'fc-conflict',
       done && 'fc-done',
+      selected && 'fc-selected',
     ].filter(Boolean),
     extendedProps: { order: o },
   };
