@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 import {
   ArrowLeft, MapPin, Phone, User, Ruler, Camera, CheckCircle,
   Clock, Save, Trash2, ChevronRight, LogOut, FileText, X, Plus, Search,
-  AlertTriangle, Calendar, Navigation,
+  AlertTriangle, Calendar, Navigation, List, CalendarDays,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -19,6 +19,10 @@ import MeasurementsEditor from './MeasurementsEditor';
 import AttachmentsEditor from './AttachmentsEditor';
 import ScheduleModal from './ScheduleModal';
 import { scheduledLabel, todayStr, timeToMinutes } from '../../services/planningService';
+import useOrdersRealtime from '../../hooks/useOrdersRealtime';
+
+// Planning (FullCalendar) chargé à la demande.
+const PlanningPage = lazy(() => import('./PlanningPage'));
 
 // Props :
 // - embedded (default false) : si true, n'affiche pas le header de page
@@ -57,6 +61,8 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
   // Menuisiers (pour choisir/changer le menuisier dans le modal horaire)
   const [menuisiers, setMenuisiers] = useState([]);
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  // Vue de la liste : 'list' (bons) ou 'planning' (calendrier partagé)
+  const [view, setView] = useState('list');
 
   const selectedOrder = orders.find((o) => o.id === selectedOrderId) || null;
 
@@ -108,10 +114,12 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
     [orders],
   );
 
-  const loadData = useCallback(async () => {
+  // `silent` : rechargement en arrière-plan (Realtime), sans spinner — sinon
+  // le menuisier serait éjecté de sa vue détail à chaque modification.
+  const loadData = useCallback(async ({ silent = false } = {}) => {
     if (!user) return;
     try {
-      setIsLoading(true);
+      if (!silent) setIsLoading(true);
       // On récupère TOUS les bons visibles à l'utilisateur : la sécurité
       // (menuisier ne voit que la menuiserie, admin voit tout, worker voit
       // tout via ses policies) est gérée côté RLS Supabase. Pas de filtre
@@ -147,6 +155,9 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Les modifications des collègues / de l'admin arrivent toutes seules.
+  useOrdersRealtime({ enabled: !!user, onChange: () => loadData({ silent: true }) });
 
   // Ouvre une intervention pour édition : on clone localement pour ne pas
   // perdre les modifications non sauvegardées si on revient en arrière.
@@ -327,7 +338,34 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
           </div>
         )}
 
-        <main className="max-w-3xl mx-auto px-4 py-6 space-y-3">
+        <main className={`${view === 'planning' ? 'max-w-5xl' : 'max-w-3xl'} mx-auto px-4 py-6 space-y-3`}>
+          {/* Liste des bons / Planning partagé */}
+          <div className="flex rounded-lg bg-gray-200 p-1 text-sm font-medium">
+            <button
+              onClick={() => setView('list')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md ${view === 'list' ? 'bg-white shadow text-gray-900' : 'text-gray-600'}`}
+            >
+              <List className="h-4 w-4" /> Bons
+            </button>
+            <button
+              onClick={() => setView('planning')}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md ${view === 'planning' ? 'bg-white shadow text-gray-900' : 'text-gray-600'}`}
+            >
+              <CalendarDays className="h-4 w-4" /> Planning
+            </button>
+          </div>
+
+          {view === 'planning' ? (
+            <Suspense fallback={(
+              <div className="flex items-center justify-center h-64">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+              </div>
+            )}>
+              {/* L'ouvrier (embedded) consulte seulement ; le menuisier gère. */}
+              <PlanningPage canEdit={!embedded} embedded />
+            </Suspense>
+          ) : (
+          <>
           {/* Sous-sections, comme côté admin */}
           <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
             {MENUISERIE_TABS.map(([value, label]) => {
@@ -523,6 +561,8 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
               </div>
             );
           })}
+          </>
+          )}
         </main>
       </div>
     );

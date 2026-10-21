@@ -20,6 +20,7 @@ const ScheduleModal = ({
   defaults = {},
   onSave,
   onClose,
+  onOpenOrder,
 }) => {
   const [date, setDate] = useState(order.scheduled_date || defaults.date || todayStr());
   const [allDay, setAllDay] = useState(order.scheduled_date ? !order.scheduled_time : !defaults.time);
@@ -76,7 +77,14 @@ const ScheduleModal = ({
   return (
     <Modal title={`Rendez-vous — ${order.client_name || 'bon'}`} onClose={onClose}>
       <div className="space-y-4">
-        {order.address && <p className="text-sm text-gray-500">{order.address}</p>}
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          {order.address ? <p className="text-sm text-gray-500">{order.address}</p> : <span />}
+          {onOpenOrder && (
+            <button onClick={onOpenOrder} className="text-sm text-blue-600 hover:underline">
+              Voir le bon complet
+            </button>
+          )}
+        </div>
 
         <div>
           <label className="block text-sm font-medium mb-1 flex items-center gap-1.5">

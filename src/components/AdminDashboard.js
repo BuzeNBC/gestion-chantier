@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase'; // Ajoutez cet import
@@ -10,6 +10,7 @@ import {
   UserCog,
   CheckCircle,
   DoorOpen,
+  CalendarDays,
   Menu,
   X
 } from 'lucide-react';
@@ -21,6 +22,14 @@ import LoginModal from './LoginModal';
 import CompletedSites from './CompletedSites';
 import MenuiserieManagement from './menuiserie/MenuiserieManagement';
 import MenuisierInterface from './menuiserie/MenuisierInterface';
+
+// Planning (FullCalendar) chargé à la demande : ~90 ko gz hors du bundle principal.
+const PlanningPage = lazy(() => import('./menuiserie/PlanningPage'));
+const PageSpinner = () => (
+  <div className="flex items-center justify-center h-64">
+    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+  </div>
+);
 
 function DashboardContent() {
   const [sites, setSites] = useState([]);
@@ -305,6 +314,15 @@ function AdminDashboard() {
                 <DoorOpen className="h-5 w-5 mr-2" />
                 Menuiserie
               </button>
+              <button
+                onClick={() => go('planning')}
+                className={`w-full flex items-center px-4 py-2 rounded-lg ${
+                  activePage === 'planning' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100'
+                } transition duration-300`}
+              >
+                <CalendarDays className="h-5 w-5 mr-2" />
+                Planning
+              </button>
             </>
           )}
 
@@ -360,6 +378,11 @@ function AdminDashboard() {
             {activePage === 'trades' && <TradesContent />}
             {activePage === 'sites' && <SiteManagement />}
             {activePage === 'menuiserie' && <MenuiserieManagement />}
+            {activePage === 'planning' && (
+              <Suspense fallback={<PageSpinner />}>
+                <PlanningPage canEdit showDetail />
+              </Suspense>
+            )}
             {activePage === 'completed' && <CompletedSites />}
           </>
         ) : activePage === 'menuiserie' ? (
