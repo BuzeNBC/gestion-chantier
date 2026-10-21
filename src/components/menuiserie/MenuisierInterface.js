@@ -82,6 +82,8 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
   // Carte & proximité : rayon (km), centre choisi à la main, position GPS
   const [radiusKm, setRadiusKm] = useState(DEFAULT_RADIUS_KM);
   const [mapCenter, setMapCenter] = useState(null);
+  // Fiche d'un bon : section « Bons à proximité » repliée par défaut
+  const [nearbyOpen, setNearbyOpen] = useState(false);
   const geo = useGeolocation();
 
   const selectedOrder = orders.find((o) => o.id === selectedOrderId) || null;
@@ -919,41 +921,6 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
           />
         )}
 
-        {/* Bons à proximité : enchaîner les interventions proches */}
-        {!selectedOrder.cancelled && (
-          <section className="bg-white rounded-lg shadow p-4 space-y-3">
-            <h2 className="font-semibold text-gray-800 flex items-center gap-2">
-              <MapIcon className="h-4 w-4 text-gray-400" /> Bons à proximité
-            </h2>
-            {hasCoords(selectedOrder) ? (
-              <>
-                <Suspense fallback={<LazySpinner />}>
-                  <OrdersMap
-                    orders={[selectedOrder, ...ordersWithin(openOrders.filter((o) => o.id !== selectedOrder.id), coordsOf(selectedOrder), radiusKm)]}
-                    center={coordsOf(selectedOrder)}
-                    radiusKm={radiusKm}
-                    selectedId={selectedOrder.id}
-                    onSelect={(o) => { if (o.id !== selectedOrder.id) setSelectedOrderId(o.id); }}
-                    className="h-56"
-                  />
-                </Suspense>
-                <NearbyOrders
-                  origin={coordsOf(selectedOrder)}
-                  orders={openOrders.filter((o) => o.id !== selectedOrder.id)}
-                  radiusKm={radiusKm}
-                  onRadiusChange={setRadiusKm}
-                  onPick={(o) => setSelectedOrderId(o.id)}
-                  emptyLabel="Aucun autre bon en cours dans ce rayon."
-                />
-              </>
-            ) : (
-              <p className="text-sm text-gray-500 italic flex items-center gap-1.5">
-                <MapPinOff className="h-4 w-4" /> Adresse non localisée — proximité indisponible (l'admin peut préciser l'adresse).
-              </p>
-            )}
-          </section>
-        )}
-
         {/* Infos client (lecture seule) */}
         <section className="bg-white rounded-lg shadow p-5 space-y-2">
           <h2 className="font-semibold text-gray-800 mb-2">Détails</h2>
@@ -1128,6 +1095,53 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
             {pdfGenerating ? 'Génération en cours…' : 'Générer le rapport PDF du bon'}
           </button>
         </section>
+
+        {/* Bons à proximité (replié par défaut) : enchaîner les interventions proches */}
+        {!selectedOrder.cancelled && (
+          <section className="bg-white rounded-lg shadow p-4 space-y-3">
+            <button
+              onClick={() => setNearbyOpen((v) => !v)}
+              className="w-full flex items-center justify-between gap-2 text-left"
+            >
+              <span className="font-semibold text-gray-800 flex items-center gap-2 flex-wrap">
+                <MapIcon className="h-4 w-4 text-gray-400" />
+                Bons à proximité
+                {hasCoords(selectedOrder) && (
+                  <span className="text-xs font-normal text-gray-500">
+                    ({ordersWithin(openOrders.filter((o) => o.id !== selectedOrder.id), coordsOf(selectedOrder), radiusKm).length} dans {radiusKm} km)
+                  </span>
+                )}
+              </span>
+              <ChevronRight className={`h-5 w-5 text-gray-400 transition-transform flex-shrink-0 ${nearbyOpen ? 'rotate-90' : ''}`} />
+            </button>
+            {nearbyOpen && (hasCoords(selectedOrder) ? (
+              <>
+                <Suspense fallback={<LazySpinner />}>
+                  <OrdersMap
+                    orders={[selectedOrder, ...ordersWithin(openOrders.filter((o) => o.id !== selectedOrder.id), coordsOf(selectedOrder), radiusKm)]}
+                    center={coordsOf(selectedOrder)}
+                    radiusKm={radiusKm}
+                    selectedId={selectedOrder.id}
+                    onSelect={(o) => { if (o.id !== selectedOrder.id) setSelectedOrderId(o.id); }}
+                    className="h-56"
+                  />
+                </Suspense>
+                <NearbyOrders
+                  origin={coordsOf(selectedOrder)}
+                  orders={openOrders.filter((o) => o.id !== selectedOrder.id)}
+                  radiusKm={radiusKm}
+                  onRadiusChange={setRadiusKm}
+                  onPick={(o) => setSelectedOrderId(o.id)}
+                  emptyLabel="Aucun autre bon en cours dans ce rayon."
+                />
+              </>
+            ) : (
+              <p className="text-sm text-gray-500 italic flex items-center gap-1.5">
+                <MapPinOff className="h-4 w-4" /> Adresse non localisée — proximité indisponible (l'admin peut préciser l'adresse).
+              </p>
+            ))}
+          </section>
+        )}
       </main>
     </div>
   );
