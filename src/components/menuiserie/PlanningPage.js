@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { AlertTriangle, Users } from 'lucide-react';
 import { supabase } from '../../services/supabase';
+import { describeDbError } from '../../services/dbErrors';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   colorForMenuisier, orderToEvent, findConflicts, conflictsFor, isPlannable, hhmm, durationLabel,
@@ -121,7 +122,7 @@ export default function PlanningPage({ canEdit = false, embedded = false, showDe
       console.error('Erreur planning :', error);
       setOrders(previous);
       revert?.();
-      showToast("Impossible d'enregistrer : vérifie ta connexion.", 'error');
+      showToast(`Impossible d'enregistrer — ${describeDbError(error)}`, 'error');
       return false;
     }
     const c = conflictsFor(updated, orders.filter((o) => o.id !== order.id));

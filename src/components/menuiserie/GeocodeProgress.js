@@ -1,18 +1,13 @@
 import React from 'react';
 import { Loader2, MapPin, MapPinOff, AlertTriangle } from 'lucide-react';
+import { describeDbError } from '../../services/dbErrors';
 
 // Bandeau de la localisation automatique (cf. useAutoGeocode / backfillGeocoding).
 // En cas d'erreur, affiche la cause réelle et quoi faire.
 const errorHint = (progress) => {
   const msg = progress.lastError || '';
   if (progress.lastErrorSource === 'db') {
-    if (/column|colonne|schema cache|PGRST204/i.test(msg)) {
-      return "La base refuse l'écriture : la migration 0016 (colonnes latitude / longitude) n'est pas appliquée. Exécute supabase/migrations/0016_menuiserie_geolocalisation.sql dans le SQL Editor, puis recharge la page.";
-    }
-    if (/permission|policy|row-level|RLS/i.test(msg)) {
-      return "La base refuse l'écriture (droits insuffisants pour ce compte).";
-    }
-    return "La base refuse l'écriture des coordonnées.";
+    return `La base refuse l'écriture des coordonnées — ${describeDbError(msg)}`;
   }
   if (/abort|timeout|Failed to fetch|NetworkError|indisponible/i.test(msg)) {
     return 'Le service de géocodage ne répond pas (connexion ou pare-feu). Réessaie plus tard.';

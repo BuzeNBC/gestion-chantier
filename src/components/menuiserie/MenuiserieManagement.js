@@ -20,6 +20,7 @@ import useOrdersRealtime from '../../hooks/useOrdersRealtime';
 import useAutoGeocode from '../../hooks/useAutoGeocode';
 import { DURATION_OPTIONS, DEFAULT_DURATION, hhmm, durationLabel, scheduledLabel } from '../../services/planningService';
 import { supabase } from '../../services/supabase';
+import { describeDbError } from '../../services/dbErrors';
 import { DBService, STORES, generateUUID } from '../../services/dbService';
 import {
   MENUISERIE_STATUS, MENUISERIE_STATUS_STYLES,
@@ -1195,7 +1196,7 @@ function MenuiserieManagement() {
       loadData({ silent: true });
     } catch (error) {
       console.error('Erreur création bon:', error);
-      alert("Erreur lors de la création du bon.");
+      alert(`Erreur lors de la création du bon — ${describeDbError(error)}`);
     }
   };
 
@@ -1220,7 +1221,7 @@ function MenuiserieManagement() {
       loadData({ silent: true });
     } catch (error) {
       console.error('Erreur modification bon:', error);
-      alert("Erreur lors de la modification du bon.");
+      alert(`Erreur lors de la modification du bon — ${describeDbError(error)}`);
     }
   };
 
@@ -1237,7 +1238,7 @@ function MenuiserieManagement() {
       setModal({ type: null });
     } catch (error) {
       console.error('Erreur validation devis:', error);
-      alert('Erreur lors de la validation du devis.');
+      alert(`Erreur lors de la validation du devis — ${describeDbError(error)}`);
     }
   };
 
@@ -1262,7 +1263,7 @@ function MenuiserieManagement() {
       setModal(modal.returnTo || { type: null });
     } catch (error) {
       console.error('Erreur planification:', error);
-      alert('Erreur lors de la planification du rendez-vous.');
+      alert(`Erreur lors de la planification — ${describeDbError(error)}`);
     }
   };
 
@@ -1279,7 +1280,7 @@ function MenuiserieManagement() {
       setModal({ type: null });
     } catch (error) {
       console.error('Erreur annulation bon:', error);
-      alert("Erreur lors de l'annulation du bon.");
+      alert(`Erreur lors de l'annulation du bon — ${describeDbError(error)}`);
     }
   };
 
@@ -1295,7 +1296,7 @@ function MenuiserieManagement() {
       setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, is_urgent: next } : o)));
     } catch (error) {
       console.error('Erreur marquage urgent:', error);
-      alert("Erreur lors du marquage urgent.");
+      alert(`Erreur lors du marquage urgent — ${describeDbError(error)}`);
     }
   };
 

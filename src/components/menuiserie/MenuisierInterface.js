@@ -6,6 +6,7 @@ import {
   Map as MapIcon, LocateFixed, MapPinOff, Loader2,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
+import { describeDbError } from '../../services/dbErrors';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   MENUISERIE_STATUS, MENUISERIE_STATUS_STYLES, MENUISERIE_PHOTO_CATEGORIES,
@@ -222,7 +223,7 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
       .eq('id', selectedOrder.id);
     if (error) {
       console.error('Erreur planification :', error);
-      alert('Erreur lors de la planification du rendez-vous.');
+      alert(`Erreur lors de la planification — ${describeDbError(error)}`);
       return;
     }
     setOrders((prev) => prev.map((o) => (
