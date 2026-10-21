@@ -1076,6 +1076,9 @@ function MenuiserieManagement() {
   const [category, setCategory] = useState('petites_interventions');
   // Rayon du modal « Bons proches à planifier »
   const [nearbyRadius, setNearbyRadius] = useState(5);
+  // 'failed' : n'afficher que les bons dont l'adresse n'a pas pu être localisée
+  // (toutes sous-sections confondues), pour les corriger.
+  const [geoFilter, setGeoFilter] = useState('all');
 
   // `silent` : rechargement en arrière-plan (Realtime), sans spinner.
   const loadData = useCallback(async ({ silent = false } = {}) => {
@@ -1314,7 +1317,10 @@ function MenuiserieManagement() {
   // Bons de l'onglet actif : tout le reste (stats, filtres, export) travaille
   // sur cette liste. Le découpage (terminés à part, portes validées ou en
   // attente de devis) est partagé avec l'interface menuisier.
-  const categoryOrders = orders.filter((o) => orderMatchesTab(o, category));
+  const failedGeo = orders.filter((o) => geocodingFailed(o) && !o.cancelled);
+  const categoryOrders = geoFilter === 'failed'
+    ? failedGeo
+    : orders.filter((o) => orderMatchesTab(o, category));
 
   const filtered = categoryOrders.filter((o) => {
     const term = search.toLowerCase();
@@ -1405,6 +1411,25 @@ function MenuiserieManagement() {
       </div>
 
       <GeocodeProgress progress={geoProgress} />
+      {(failedGeo.length > 0 || geoFilter === 'failed') && (
+        <div className="flex items-center gap-2 flex-wrap text-xs">
+          <button
+            onClick={() => setGeoFilter((f) => (f === 'failed' ? 'all' : 'failed'))}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border font-medium ${
+              geoFilter === 'failed' ? 'bg-amber-600 text-white border-amber-600' : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+            }`}
+          >
+            <MapPinOff className="h-3.5 w-3.5" />
+            {failedGeo.length} adresse{failedGeo.length > 1 ? 's' : ''} introuvable{failedGeo.length > 1 ? 's' : ''}
+            {geoFilter === 'failed' ? ' — afficher tous les bons' : ' — voir la liste'}
+          </button>
+          {geoFilter === 'failed' && (
+            <span className="text-gray-600">
+              Ouvre le bon (crayon), retape l'adresse avec numéro, rue et ville, puis choisis une suggestion : il sera localisé aussitôt.
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Sous-sections */}
       <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
@@ -1428,7 +1453,7 @@ function MenuiserieManagement() {
           return (
             <button
               key={value}
-              onClick={() => setCategory(value)}
+              onClick={() => { setCategory(value); setGeoFilter('all'); }}
               className={`px-2.5 py-2 lg:px-4 lg:py-2.5 text-xs lg:text-sm font-medium rounded-t-lg border-b-2 -mb-px whitespace-nowrap ${
                 active ? activeStyle : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
               }`}
@@ -1551,7 +1576,7 @@ function MenuiserieManagement() {
                 {order.bt_number && (
                   <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded">BT {order.bt_number}</span>
                 )}
-                {category === 'termines' && (
+                {(category === 'termines' || geoFilter === 'failed') && (
                   <span className="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full">
                     {categoryLabel(orderCategory(order))}
                   </span>
