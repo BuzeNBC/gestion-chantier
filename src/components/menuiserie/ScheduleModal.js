@@ -23,7 +23,8 @@ const ScheduleModal = ({
   onOpenOrder,
 }) => {
   const [date, setDate] = useState(order.scheduled_date || defaults.date || todayStr());
-  const [allDay, setAllDay] = useState(order.scheduled_date ? !order.scheduled_time : !defaults.time);
+  // Un RDV déjà posé garde son mode ; un nouveau RDV propose une heure.
+  const [allDay, setAllDay] = useState(order.scheduled_date ? !order.scheduled_time : false);
   const [time, setTime] = useState(hhmm(order.scheduled_time) || defaults.time || '09:00');
   const [duration, setDuration] = useState(order.duration_minutes || defaults.duration || DEFAULT_DURATION);
   const [assignee, setAssignee] = useState(order.assigned_to || defaults.assignee || '');

@@ -3,6 +3,7 @@ import {
   ArrowLeft, MapPin, Phone, User, Ruler, Camera, CheckCircle,
   Clock, Save, Trash2, ChevronRight, LogOut, FileText, X, Plus, Search,
   AlertTriangle, Calendar, Navigation, List, CalendarDays,
+  Map as MapIcon, LocateFixed, MapPinOff, Loader2,
 } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -20,9 +21,20 @@ import AttachmentsEditor from './AttachmentsEditor';
 import ScheduleModal from './ScheduleModal';
 import { scheduledLabel, todayStr, timeToMinutes } from '../../services/planningService';
 import useOrdersRealtime from '../../hooks/useOrdersRealtime';
+import useGeolocation from '../../hooks/useGeolocation';
+import NearbyOrders from './NearbyOrders';
+import InstallAppHint from '../InstallAppHint';
+import { isPlannable } from '../../services/planningService';
+import { hasCoords, coordsOf, ordersWithin, RADIUS_OPTIONS, DEFAULT_RADIUS_KM } from '../../services/geoUtils';
 
-// Planning (FullCalendar) chargé à la demande.
+// Planning (FullCalendar) et carte (Leaflet) chargés à la demande.
 const PlanningPage = lazy(() => import('./PlanningPage'));
+const OrdersMap = lazy(() => import('./OrdersMap'));
+const LazySpinner = () => (
+  <div className="flex items-center justify-center h-40">
+    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+  </div>
+);
 
 // Props :
 // - embedded (default false) : si true, n'affiche pas le header de page
@@ -61,8 +73,13 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
   // Menuisiers (pour choisir/changer le menuisier dans le modal horaire)
   const [menuisiers, setMenuisiers] = useState([]);
   const [scheduleOpen, setScheduleOpen] = useState(false);
-  // Vue de la liste : 'list' (bons) ou 'planning' (calendrier partagé)
+  // Vue de la liste : 'list' (bons), 'map' (carte / autour de moi) ou
+  // 'planning' (calendrier partagé)
   const [view, setView] = useState('list');
+  // Carte & proximité : rayon (km), centre choisi à la main, position GPS
+  const [radiusKm, setRadiusKm] = useState(DEFAULT_RADIUS_KM);
+  const [mapCenter, setMapCenter] = useState(null);
+  const geo = useGeolocation();
 
   const selectedOrder = orders.find((o) => o.id === selectedOrderId) || null;
 
@@ -113,6 +130,12 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
     () => orders.filter((o) => o.scheduled_date === todayStr() && !o.cancelled).length,
     [orders],
   );
+
+  // Bons « ouverts » (ni terminés ni annulés) : la carte et la proximité
+  // portent sur eux, toutes sous-sections confondues.
+  const openOrders = useMemo(() => orders.filter((o) => isPlannable(o)), [orders]);
+  // Centre de la carte : point choisi à la main, sinon position GPS.
+  const mapCenterEffective = mapCenter || geo.position || null;
 
   // `silent` : rechargement en arrière-plan (Realtime), sans spinner — sinon
   // le menuisier serait éjecté de sa vue détail à chaque modification.
@@ -339,31 +362,103 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
         )}
 
         <main className={`${view === 'planning' ? 'max-w-5xl' : 'max-w-3xl'} mx-auto px-4 py-6 space-y-3`}>
-          {/* Liste des bons / Planning partagé */}
+          {!embedded && <InstallAppHint />}
+
+          {/* Liste des bons / Carte / Planning partagé */}
           <div className="flex rounded-lg bg-gray-200 p-1 text-sm font-medium">
-            <button
-              onClick={() => setView('list')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md ${view === 'list' ? 'bg-white shadow text-gray-900' : 'text-gray-600'}`}
-            >
-              <List className="h-4 w-4" /> Bons
-            </button>
-            <button
-              onClick={() => setView('planning')}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md ${view === 'planning' ? 'bg-white shadow text-gray-900' : 'text-gray-600'}`}
-            >
-              <CalendarDays className="h-4 w-4" /> Planning
-            </button>
+            {[
+              ['list', 'Bons', List],
+              ['map', 'Carte', MapIcon],
+              ['planning', 'Planning', CalendarDays],
+            ].map(([key, label, Icon]) => (
+              <button
+                key={key}
+                onClick={() => setView(key)}
+                className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md ${view === key ? 'bg-white shadow text-gray-900' : 'text-gray-600'}`}
+              >
+                <Icon className="h-4 w-4" /> {label}
+              </button>
+            ))}
           </div>
 
           {view === 'planning' ? (
-            <Suspense fallback={(
-              <div className="flex items-center justify-center h-64">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
-              </div>
-            )}>
+            <Suspense fallback={<LazySpinner />}>
               {/* L'ouvrier (embedded) consulte seulement ; le menuisier gère. */}
               <PlanningPage canEdit={!embedded} embedded />
             </Suspense>
+          ) : view === 'map' ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={geo.request}
+                  disabled={geo.status === 'loading'}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-60"
+                >
+                  {geo.status === 'loading' ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />}
+                  Autour de moi
+                </button>
+                <div className="flex items-center gap-1">
+                  {RADIUS_OPTIONS.map((r) => (
+                    <button
+                      key={r}
+                      onClick={() => setRadiusKm(r)}
+                      className={`px-2.5 py-1.5 rounded-full text-xs font-medium border ${
+                        radiusKm === r ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-700 border-gray-300'
+                      }`}
+                    >
+                      {r} km
+                    </button>
+                  ))}
+                </div>
+                {mapCenter && (
+                  <button onClick={() => setMapCenter(null)} className="text-xs text-gray-500 underline">
+                    Oublier le point choisi
+                  </button>
+                )}
+              </div>
+              {geo.error && <p className="text-xs text-amber-700">{geo.error}</p>}
+              {!mapCenterEffective && (
+                <p className="text-xs text-gray-500">
+                  Touche « Autour de moi » (ou un point de la carte) pour voir les bons dans le rayon.
+                  Rouge = urgent · orange = relancé · bleu = normal.
+                </p>
+              )}
+              <Suspense fallback={<LazySpinner />}>
+                <OrdersMap
+                  orders={mapCenterEffective ? ordersWithin(openOrders, mapCenterEffective, 10000) : openOrders}
+                  center={mapCenterEffective}
+                  radiusKm={mapCenterEffective ? radiusKm : null}
+                  userPosition={geo.position}
+                  onSelect={(o) => setSelectedOrderId(o.id)}
+                  onPickCenter={(ll) => setMapCenter(ll)}
+                  fit={!mapCenterEffective}
+                  className="h-[55vh]"
+                />
+              </Suspense>
+              {mapCenterEffective && (
+                <div className="bg-white rounded-lg shadow p-3">
+                  <h3 className="font-semibold text-gray-800 mb-2 text-sm">Dans un rayon de {radiusKm} km</h3>
+                  <NearbyOrders
+                    origin={mapCenterEffective}
+                    orders={openOrders}
+                    radiusKm={radiusKm}
+                    onRadiusChange={setRadiusKm}
+                    onPick={(o) => setSelectedOrderId(o.id)}
+                    emptyLabel="Aucun bon en cours dans ce rayon."
+                  />
+                </div>
+              )}
+              {openOrders.some((o) => o.address && !hasCoords(o)) && (
+                <div className="text-xs text-gray-500">
+                  <span className="inline-flex items-center gap-1"><MapPinOff className="h-3.5 w-3.5" /> Non localisés (absents de la carte) :</span>{' '}
+                  {openOrders.filter((o) => o.address && !hasCoords(o)).map((o) => (
+                    <button key={o.id} onClick={() => setSelectedOrderId(o.id)} className="underline mr-2">
+                      {o.client_name || 'Client'}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           ) : (
           <>
           {/* Sous-sections, comme côté admin */}
@@ -805,6 +900,41 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
             onSave={saveSchedule}
             onClose={() => setScheduleOpen(false)}
           />
+        )}
+
+        {/* Bons à proximité : enchaîner les interventions proches */}
+        {!selectedOrder.cancelled && (
+          <section className="bg-white rounded-lg shadow p-4 space-y-3">
+            <h2 className="font-semibold text-gray-800 flex items-center gap-2">
+              <MapIcon className="h-4 w-4 text-gray-400" /> Bons à proximité
+            </h2>
+            {hasCoords(selectedOrder) ? (
+              <>
+                <Suspense fallback={<LazySpinner />}>
+                  <OrdersMap
+                    orders={[selectedOrder, ...ordersWithin(openOrders.filter((o) => o.id !== selectedOrder.id), coordsOf(selectedOrder), radiusKm)]}
+                    center={coordsOf(selectedOrder)}
+                    radiusKm={radiusKm}
+                    selectedId={selectedOrder.id}
+                    onSelect={(o) => { if (o.id !== selectedOrder.id) setSelectedOrderId(o.id); }}
+                    className="h-56"
+                  />
+                </Suspense>
+                <NearbyOrders
+                  origin={coordsOf(selectedOrder)}
+                  orders={openOrders.filter((o) => o.id !== selectedOrder.id)}
+                  radiusKm={radiusKm}
+                  onRadiusChange={setRadiusKm}
+                  onPick={(o) => setSelectedOrderId(o.id)}
+                  emptyLabel="Aucun autre bon en cours dans ce rayon."
+                />
+              </>
+            ) : (
+              <p className="text-sm text-gray-500 italic flex items-center gap-1.5">
+                <MapPinOff className="h-4 w-4" /> Adresse non localisée — proximité indisponible (l'admin peut préciser l'adresse).
+              </p>
+            )}
+          </section>
         )}
 
         {/* Infos client (lecture seule) */}

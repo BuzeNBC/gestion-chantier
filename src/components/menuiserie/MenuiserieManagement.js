@@ -1,9 +1,17 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { Menu, MenuButton, MenuItems, MenuItem } from '@headlessui/react';
 import {
-  Plus, Edit, Trash, Search, Eye, MapPin, User, Calendar, FileText, Download,
+  Plus, Edit, Trash, Search, Eye, MapPin, MapPinOff, User, Calendar, FileText, Download,
   Euro, Bell, AlertTriangle, Inbox, BadgeCheck, Ban, MoreVertical, Phone, Navigation, Clock,
+  Map as MapIcon, Loader2,
 } from 'lucide-react';
+import AddressAutocomplete from './AddressAutocomplete';
+import NearbyOrders from './NearbyOrders';
+import { hasCoords, coordsOf, ordersWithin, needsGeocoding, geocodingFailed } from '../../services/geoUtils';
+import {
+  geocodeOne, geocodePatch, geocodeFailPatch, geocodeClearPatch, backfillGeocoding,
+} from '../../services/geocodingService';
+import { isPlannable, addMinutesToTime } from '../../services/planningService';
 import Modal from './MenuiserieModal';
 import ScheduleModal from './ScheduleModal';
 import OrderDetail from './OrderDetail';
@@ -25,6 +33,9 @@ import {
 import { exportMonthCsv, exportMonthPdf, monthLabel } from '../../services/menuiserieExport';
 import InterventionLinesEditor from './InterventionLinesEditor';
 import AttachmentsEditor from './AttachmentsEditor';
+
+// Carte (Leaflet) chargée à la demande.
+const OrdersMap = lazy(() => import('./OrdersMap'));
 
 // Libellé d'un onglet (sous-sections + Devis validés + Terminés).
 const tabLabel = (tab) => (MENUISERIE_TABS.find(([v]) => v === tab) || [])[1] || tab;
@@ -111,6 +122,104 @@ const emptyForm = {
   received_date: '',
   devis_valide: false,
   devis_valide_date: '',
+  // Géolocalisation (remplie par l'autocomplétion ou au submit)
+  latitude: null,
+  longitude: null,
+  geocode_label: null,
+  geocode_score: null,
+  geocode_address: null,
+  geocode_source: null,
+  geocoded_at: null,
+};
+
+// Champs géo d'un bon existant -> état du formulaire
+const geoFieldsFrom = (order) => ({
+  latitude: order.latitude ?? null,
+  longitude: order.longitude ?? null,
+  geocode_label: order.geocode_label || null,
+  geocode_score: order.geocode_score ?? null,
+  geocode_address: order.geocode_address || null,
+  geocode_source: order.geocode_source || null,
+  geocoded_at: order.geocoded_at || null,
+});
+
+// Bandeau de rétro-géocodage (modal Carte) : localise en tâche de fond les
+// bons qui ont une adresse mais pas de coordonnées.
+const GeocodeBackfill = ({ orders, onDone }) => {
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState(null);
+  const [retryFailed, setRetryFailed] = useState(false);
+  const stopRef = useRef(false);
+  const todo = orders.filter((o) => needsGeocoding(o) || (retryFailed && geocodingFailed(o)));
+  const failedCount = orders.filter(geocodingFailed).length;
+
+  const run = async () => {
+    stopRef.current = false;
+    setRunning(true);
+    setProgress({ done: 0, total: todo.length, ok: 0, failed: 0, errors: 0 });
+    try {
+      const stats = await backfillGeocoding(todo, {
+        update: async (id, patch) => {
+          const { error } = await supabase.from('menuiserie_orders').update(patch).eq('id', id);
+          if (error) throw error;
+        },
+        onProgress: setProgress,
+        shouldStop: () => stopRef.current,
+      });
+      setProgress({ ...stats, finished: true });
+    } finally {
+      setRunning(false);
+      onDone?.();
+    }
+  };
+
+  if (todo.length === 0 && !progress) {
+    if (failedCount === 0) return null;
+    return (
+      <div className="mb-3 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600 flex items-center gap-3 flex-wrap">
+        <MapPinOff className="h-4 w-4" />
+        {failedCount} adresse{failedCount > 1 ? 's' : ''} non localisable{failedCount > 1 ? 's' : ''} (précise numéro, rue et ville dans le bon).
+        <label className="flex items-center gap-1 cursor-pointer ml-auto">
+          <input type="checkbox" checked={retryFailed} onChange={(e) => setRetryFailed(e.target.checked)} className="h-3.5 w-3.5" />
+          Réessayer ces adresses
+        </label>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm flex items-center gap-3 flex-wrap">
+      {running ? (
+        <>
+          <Loader2 className="h-4 w-4 animate-spin text-amber-700" />
+          <span>Localisation en cours… {progress?.done || 0}/{progress?.total || todo.length}</span>
+          <button onClick={() => { stopRef.current = true; }} className="ml-auto px-3 py-1 rounded-lg border border-amber-300 text-amber-800 text-xs">
+            Arrêter
+          </button>
+        </>
+      ) : progress?.finished ? (
+        <>
+          <MapPin className="h-4 w-4 text-green-700" />
+          <span>{progress.ok} localisée{progress.ok > 1 ? 's' : ''}, {progress.failed} non localisée{progress.failed > 1 ? 's' : ''}{progress.errors ? `, ${progress.errors} erreur(s) réseau` : ''}.</span>
+          {todo.length > 0 && (
+            <button onClick={run} className="ml-auto px-3 py-1 rounded-lg bg-amber-600 text-white text-xs">Relancer ({todo.length})</button>
+          )}
+        </>
+      ) : (
+        <>
+          <MapPinOff className="h-4 w-4 text-amber-700" />
+          <span>{todo.length} bon{todo.length > 1 ? 's' : ''} avec une adresse non localisée.</span>
+          <label className="flex items-center gap-1 cursor-pointer text-xs">
+            <input type="checkbox" checked={retryFailed} onChange={(e) => setRetryFailed(e.target.checked)} className="h-3.5 w-3.5" />
+            inclure les échecs précédents
+          </label>
+          <button onClick={run} className="ml-auto px-3 py-1 rounded-lg bg-amber-600 text-white text-xs hover:bg-amber-700">
+            Géocoder maintenant
+          </button>
+        </>
+      )}
+    </div>
+  );
 };
 
 // Construit les `interventionLines` initiales du formulaire à partir d'un bon
@@ -151,6 +260,7 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
     received_date: order.received_date || '',
     devis_valide: !!order.devis_valide,
     devis_valide_date: order.devis_valide_date || '',
+    ...geoFieldsFrom(order),
   } : {
     ...emptyForm,
     category: defaultCategory || 'petites_interventions',
@@ -168,6 +278,7 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
   // upfront pour pouvoir uploader dans Storage avant la création de la ligne SQL.
   const [attachments, setAttachments] = useState(order?.attachments || []);
   const [formOrderId] = useState(() => order?.id || generateUUID());
+  const [submitting, setSubmitting] = useState(false);
 
   const set = (field, value) => setForm((f) => ({ ...f, [field]: value }));
 
@@ -176,7 +287,8 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
     ? [form.charge_affaire, ...chargeAffaireOptions]
     : chargeAffaireOptions;
 
-  const submit = () => {
+  const submit = async () => {
+    if (submitting) return;
     if (!form.client_name.trim()) {
       alert('Le nom du client est obligatoire.');
       return;
@@ -206,8 +318,36 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
       return;
     }
     const effectiveCA = customCAMode ? customCA.trim() : form.charge_affaire.trim();
+
+    // Géocodage : si l'adresse n'a jamais été localisée, ou a changé depuis,
+    // on tente l'API Adresse avant d'enregistrer (le géocodeur indisponible
+    // n'empêche pas l'enregistrement : le bon sera retenté plus tard).
+    const address = form.address.trim();
+    let geo = {
+      latitude: form.latitude, longitude: form.longitude, geocode_label: form.geocode_label,
+      geocode_score: form.geocode_score, geocode_address: form.geocode_address,
+      geocode_source: form.geocode_source, geocoded_at: form.geocoded_at,
+    };
+    setSubmitting(true);
+    try {
+      if (!address) {
+        geo = geocodeClearPatch();
+      } else if (!hasCoords(form) || String(form.geocode_address || '') !== address) {
+        try {
+          const hit = await geocodeOne(address);
+          geo = hit ? geocodePatch(hit, address) : geocodeFailPatch(address);
+        } catch (e) {
+          console.warn('Géocodeur indisponible, adresse enregistrée sans coordonnées :', e);
+        }
+      }
+    } finally {
+      setSubmitting(false);
+    }
+
     onSubmit({
       ...form,
+      address,
+      ...geo,
       interventions,
       attachments,
       charge_affaire: effectiveCA || null,
@@ -274,12 +414,11 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
 
       <div>
         <label className="block text-sm font-medium mb-1">Adresse du chantier</label>
-        <input
-          type="text"
+        <AddressAutocomplete
           value={form.address}
-          onChange={(e) => set('address', e.target.value)}
-          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-          placeholder="12 rue des Lilas, 59000 Lille"
+          onChange={(text) => set('address', text)}
+          onSelect={(hit) => setForm((f) => ({ ...f, address: hit.label, ...geocodePatch(hit, hit.label) }))}
+          geo={form}
         />
       </div>
 
@@ -503,8 +642,8 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
         <button onClick={onCancel} className="px-4 py-2 text-gray-600 rounded-lg hover:bg-gray-100">
           Annuler
         </button>
-        <button onClick={submit} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
-          {order ? 'Enregistrer' : 'Créer le bon'}
+        <button onClick={submit} disabled={submitting} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+          {submitting ? 'Localisation…' : order ? 'Enregistrer' : 'Créer le bon'}
         </button>
       </div>
     </div>
@@ -930,8 +1069,10 @@ function MenuiserieManagement() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [billingFilter, setBillingFilter] = useState('all');
-  // Sous-section active (onglet) : petites interventions / commande de portes
+  // Sous-section active (onglet) : petites interventions / chantiers neufs / …
   const [category, setCategory] = useState('petites_interventions');
+  // Rayon du modal « Bons proches à planifier »
+  const [nearbyRadius, setNearbyRadius] = useState(5);
 
   // `silent` : rechargement en arrière-plan (Realtime), sans spinner.
   const loadData = useCallback(async ({ silent = false } = {}) => {
@@ -1013,6 +1154,19 @@ function MenuiserieManagement() {
     }
   };
 
+  // Après enregistrement : si le bon a un rendez-vous et une position, on
+  // propose les bons proches encore à planifier (regroupement de la tournée).
+  const afterSave = (saved) => {
+    if (saved.scheduled_date && hasCoords(saved) && !saved.cancelled) {
+      const candidates = orders.filter((o) => o.id !== saved.id && isPlannable(o) && !o.scheduled_date);
+      if (ordersWithin(candidates, coordsOf(saved), 5).length > 0) {
+        setModal({ type: 'nearby', data: saved });
+        return;
+      }
+    }
+    setModal({ type: null });
+  };
+
   const handleCreate = async (formData) => {
     try {
       const { _customTypesToPersist, _customCAToPersist, _preGeneratedId, ...orderFields } = formData;
@@ -1031,8 +1185,8 @@ function MenuiserieManagement() {
       await DBService.store(STORES.MENUISERIE, newOrder);
       await persistCustomTasksIfAny(_customTypesToPersist);
       await persistCustomCAIfAny(_customCAToPersist);
-      setModal({ type: null });
-      loadData();
+      afterSave(newOrder);
+      loadData({ silent: true });
     } catch (error) {
       console.error('Erreur création bon:', error);
       alert("Erreur lors de la création du bon.");
@@ -1056,8 +1210,8 @@ function MenuiserieManagement() {
       await DBService.store(STORES.MENUISERIE, updated);
       await persistCustomTasksIfAny(_customTypesToPersist);
       await persistCustomCAIfAny(_customCAToPersist);
-      setModal({ type: null });
-      loadData();
+      afterSave(updated);
+      loadData({ silent: true });
     } catch (error) {
       console.error('Erreur modification bon:', error);
       alert("Erreur lors de la modification du bon.");
@@ -1098,7 +1252,8 @@ function MenuiserieManagement() {
           ? { ...o, ...patch, assigned_profile: assignedProfile, planning_updated_at: new Date().toISOString() }
           : o
       )));
-      setModal({ type: null });
+      // Depuis « Bons proches à planifier » : on y revient pour enchaîner.
+      setModal(modal.returnTo || { type: null });
     } catch (error) {
       console.error('Erreur planification:', error);
       alert('Erreur lors de la planification du rendez-vous.');
@@ -1220,6 +1375,13 @@ function MenuiserieManagement() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl lg:text-4xl font-bold text-gray-800">Menuiserie</h1>
         <div className="flex items-center gap-2 flex-1 sm:flex-none justify-end">
+          <button
+            onClick={() => setModal({ type: 'map' })}
+            className="flex items-center justify-center gap-2 px-3 lg:px-4 py-2 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 text-sm lg:text-base"
+            title="Carte des bons de cet onglet"
+          >
+            <MapIcon className="h-5 w-5" /> Carte
+          </button>
           <button
             onClick={() => setModal({ type: 'export' })}
             className="flex items-center justify-center gap-2 px-3 lg:px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 text-sm lg:text-base"
@@ -1445,6 +1607,11 @@ function MenuiserieManagement() {
                   </span>
                 )}
                 {order.address && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{order.address}</span>}
+                {order.address && !hasCoords(order) && (
+                  <span className="flex items-center gap-1 text-xs text-gray-400" title="Adresse non localisée : absente de la carte et de la proximité">
+                    <MapPinOff className="h-3.5 w-3.5" /> non localisée
+                  </span>
+                )}
                 <span className="flex items-center gap-1">
                   <User className="h-3.5 w-3.5" />
                   {order.assigned_profile?.Name || 'Non assigné'}
@@ -1543,9 +1710,68 @@ function MenuiserieManagement() {
           order={modal.data}
           orders={orders}
           menuisiers={menuisiers}
+          defaults={modal.defaults || {}}
           onSave={(patch) => saveSchedule(modal.data, patch)}
-          onClose={() => setModal({ type: null })}
+          onClose={() => setModal(modal.returnTo || { type: null })}
         />
+      )}
+      {modal.type === 'nearby' && (
+        <Modal title="Bons proches à planifier" onClose={() => setModal({ type: null })}>
+          <p className="text-sm text-gray-600 mb-3">
+            Autour de <strong>{modal.data.client_name || 'ce bon'}</strong> — RDV {scheduledLabel(modal.data)}.
+            Regroupe les interventions proches le même jour pour éviter les allers-retours.
+          </p>
+          <NearbyOrders
+            origin={coordsOf(modal.data)}
+            orders={orders.filter((o) => o.id !== modal.data.id && isPlannable(o) && !o.scheduled_date)}
+            radiusKm={nearbyRadius}
+            onRadiusChange={setNearbyRadius}
+            onPick={(o) => setModal({ type: 'detail', data: o })}
+            renderAction={(o) => (
+              <button
+                onClick={() => setModal({
+                  type: 'schedule',
+                  data: o,
+                  returnTo: modal,
+                  defaults: {
+                    date: modal.data.scheduled_date,
+                    time: modal.data.scheduled_time
+                      ? addMinutesToTime(hhmm(modal.data.scheduled_time), modal.data.duration_minutes || DEFAULT_DURATION)
+                      : '09:00',
+                    assignee: modal.data.assigned_to || '',
+                    duration: o.duration_minutes || DEFAULT_DURATION,
+                  },
+                })}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 flex-shrink-0"
+              >
+                <Clock className="h-3.5 w-3.5" /> Planifier
+              </button>
+            )}
+            emptyLabel="Plus aucun bon à planifier dans ce rayon."
+          />
+          <div className="flex justify-end pt-3">
+            <button onClick={() => setModal({ type: null })} className="px-4 py-2 text-gray-600 rounded-lg hover:bg-gray-100">
+              Terminer
+            </button>
+          </div>
+        </Modal>
+      )}
+      {modal.type === 'map' && (
+        <Modal title={`Carte — ${tabLabel(category)}`} onClose={() => setModal({ type: null })} wide>
+          <GeocodeBackfill orders={orders} onDone={() => loadData({ silent: true })} />
+          <Suspense fallback={<div className="h-[65vh] flex items-center justify-center"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" /></div>}>
+            <OrdersMap
+              orders={categoryOrders}
+              fit
+              onSelect={(o) => setModal({ type: 'detail', data: o })}
+              className="h-[65vh]"
+            />
+          </Suspense>
+          <p className="text-xs text-gray-500 mt-2">
+            Rouge = urgent · orange = relancé · bleu = normal · gris = clos.
+            {' '}{categoryOrders.filter((o) => o.address && !hasCoords(o)).length} bon(s) de cet onglet sans position.
+          </p>
+        </Modal>
       )}
       {modal.type === 'cancel' && (
         <Modal title={`Annulation — ${modal.data.client_name || 'bon'}`} onClose={() => setModal({ type: null })}>
