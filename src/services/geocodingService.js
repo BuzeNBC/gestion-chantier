@@ -95,23 +95,42 @@ export const geocodeClearPatch = () => ({
 });
 
 // Rétro-géocodage séquentiel (5 req/s max : poli vis-à-vis du service).
-// `update(orderId, patch)` écrit en base ; `onProgress({ done, total, ok, failed })`.
-// Une erreur réseau n'écrit rien (le bon sera retenté plus tard).
+// update(orderId, patch) écrit en base ; onProgress(stats) suit l'avancement.
+// Les erreurs sont classées : 'geocoder' (réseau / service) ou 'db'
+// (écriture refusée, ex. migration 0016 non appliquée). Après 3 erreurs
+// consécutives on s'arrête (stats.aborted) : inutile d'insister, et le
+// message de la dernière erreur (stats.lastError) explique quoi corriger.
 export const backfillGeocoding = async (orders, { update, onProgress, shouldStop, delayMs = 200 } = {}) => {
-  const stats = { done: 0, total: orders.length, ok: 0, failed: 0, errors: 0 };
+  const stats = {
+    done: 0, total: orders.length, ok: 0, failed: 0, errors: 0,
+    lastError: null, lastErrorSource: null, aborted: false,
+  };
+  let consecutiveErrors = 0;
   for (const order of orders) {
     if (shouldStop?.()) break;
     const address = String(order.address || '').trim();
+    let hit = null;
+    let source = 'geocoder';
     try {
-      const hit = await geocodeOne(address);
+      hit = await geocodeOne(address);
+      source = 'db';
       await update(order.id, hit ? geocodePatch(hit, address) : geocodeFailPatch(address));
       if (hit) stats.ok += 1; else stats.failed += 1;
+      consecutiveErrors = 0;
     } catch (e) {
-      console.warn('Géocodage impossible pour', order.id, e);
+      console.warn('Géocodage impossible pour', order.id, '(' + source + ')', e);
       stats.errors += 1;
+      stats.lastError = e?.message || String(e);
+      stats.lastErrorSource = source;
+      consecutiveErrors += 1;
     }
     stats.done += 1;
     onProgress?.({ ...stats });
+    if (consecutiveErrors >= 3) {
+      stats.aborted = true;
+      onProgress?.({ ...stats });
+      break;
+    }
     await new Promise((r) => setTimeout(r, delayMs));
   }
   return stats;

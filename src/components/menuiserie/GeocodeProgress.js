@@ -1,10 +1,28 @@
 import React from 'react';
 import { Loader2, MapPin, MapPinOff, AlertTriangle } from 'lucide-react';
 
-// Bandeau discret de la localisation automatique (cf. useAutoGeocode).
+// Bandeau de la localisation automatique (cf. useAutoGeocode / backfillGeocoding).
+// En cas d'erreur, affiche la cause réelle et quoi faire.
+const errorHint = (progress) => {
+  const msg = progress.lastError || '';
+  if (progress.lastErrorSource === 'db') {
+    if (/column|colonne|schema cache|PGRST204/i.test(msg)) {
+      return "La base refuse l'écriture : la migration 0016 (colonnes latitude / longitude) n'est pas appliquée. Exécute supabase/migrations/0016_menuiserie_geolocalisation.sql dans le SQL Editor, puis recharge la page.";
+    }
+    if (/permission|policy|row-level|RLS/i.test(msg)) {
+      return "La base refuse l'écriture (droits insuffisants pour ce compte).";
+    }
+    return "La base refuse l'écriture des coordonnées.";
+  }
+  if (/abort|timeout|Failed to fetch|NetworkError|indisponible/i.test(msg)) {
+    return 'Le service de géocodage ne répond pas (connexion ou pare-feu). Réessaie plus tard.';
+  }
+  return 'Erreur pendant la localisation.';
+};
+
 export default function GeocodeProgress({ progress, className = '' }) {
   if (!progress) return null;
-  if (!progress.finished) {
+  if (!progress.finished && !progress.aborted) {
     return (
       <div className={`flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-800 ${className}`}>
         <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
@@ -12,17 +30,28 @@ export default function GeocodeProgress({ progress, className = '' }) {
       </div>
     );
   }
-  const problems = (progress.failed || 0) + (progress.errors || 0);
-  if (progress.ok === 0 && problems === 0) return null;
+  if (progress.errors) {
+    return (
+      <div className={`px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-800 space-y-1 ${className}`}>
+        <p className="flex items-center gap-2 font-medium">
+          <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+          Localisation interrompue : {progress.ok} réussie{progress.ok > 1 ? 's' : ''}, {progress.errors} en erreur
+          {progress.aborted ? ` (arrêt après 3 échecs consécutifs, ${progress.total - progress.done} non tentée${progress.total - progress.done > 1 ? 's' : ''})` : ''}.
+        </p>
+        <p>{errorHint(progress)}</p>
+        {progress.lastError && (
+          <p className="font-mono text-[11px] text-red-700/80 break-all">Détail : {progress.lastError}</p>
+        )}
+      </div>
+    );
+  }
+  if (progress.ok === 0 && !progress.failed) return null;
   return (
-    <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${
-      progress.errors ? 'bg-red-50 border border-red-200 text-red-800' : 'bg-green-50 border border-green-200 text-green-800'
-    } ${className}`}>
-      {progress.errors ? <AlertTriangle className="h-4 w-4 flex-shrink-0" /> : progress.failed ? <MapPinOff className="h-4 w-4 flex-shrink-0" /> : <MapPin className="h-4 w-4 flex-shrink-0" />}
+    <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs bg-green-50 border border-green-200 text-green-800 ${className}`}>
+      {progress.failed ? <MapPinOff className="h-4 w-4 flex-shrink-0" /> : <MapPin className="h-4 w-4 flex-shrink-0" />}
       <span>
         {progress.ok} adresse{progress.ok > 1 ? 's' : ''} localisée{progress.ok > 1 ? 's' : ''}
-        {progress.failed ? `, ${progress.failed} introuvable${progress.failed > 1 ? 's' : ''} (précise numéro, rue et ville)` : ''}
-        {progress.errors ? `, ${progress.errors} en erreur (migration 0016 appliquée ? connexion ?)` : ''}.
+        {progress.failed ? `, ${progress.failed} introuvable${progress.failed > 1 ? 's' : ''} (précise numéro, rue et ville dans le bon)` : ''}.
       </span>
     </div>
   );
