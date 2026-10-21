@@ -26,6 +26,7 @@ import useGeolocation from '../../hooks/useGeolocation';
 import useAutoGeocode from '../../hooks/useAutoGeocode';
 import GeocodeProgress from './GeocodeProgress';
 import NearbyOrders from './NearbyOrders';
+import CallButton, { CallBadge } from './CallButton';
 import InstallAppHint from '../InstallAppHint';
 import { isPlannable } from '../../services/planningService';
 import { hasCoords, coordsOf, ordersWithin, RADIUS_OPTIONS, DEFAULT_RADIUS_KM } from '../../services/geoUtils';
@@ -85,6 +86,10 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
   // Fiche d'un bon : section « Bons à proximité » repliée par défaut
   const [nearbyOpen, setNearbyOpen] = useState(false);
   const geo = useGeolocation();
+  // Nom affiché dans la pastille d'appel
+  const myName = menuisiers.find((m) => m.id === user?.id)?.Name || null;
+  const onCallLogged = (orderId) => (next) =>
+    setOrders((prev) => prev.map((x) => (x.id === orderId ? { ...x, call_log: next } : x)));
 
   const selectedOrder = orders.find((o) => o.id === selectedOrderId) || null;
 
@@ -655,15 +660,16 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
                       <span className="font-medium text-indigo-700">RDV {scheduledLabel(order)}</span>
                     )}
                   </p>
+                  <CallBadge order={order} />
                 </div>
                 <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0" />
               </button>
               {(tel || dirs) && (
                 <div className="flex gap-2 px-4 pb-3 -mt-1">
                   {tel && (
-                    <a href={tel} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700">
+                    <CallButton order={order} byName={myName} onLogged={onCallLogged(order.id)} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700">
                       <Phone className="h-4 w-4" /> Appeler
-                    </a>
+                    </CallButton>
                   )}
                   {dirs && (
                     <a href={dirs.google} target="_blank" rel="noopener noreferrer" className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700">
@@ -934,9 +940,10 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
               <Phone className="h-4 w-4 text-gray-400" /> {selectedOrder.client_phone}
               {telHref(selectedOrder.client_phone) && (
                 <>
-                  <a href={telHref(selectedOrder.client_phone)} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-medium hover:bg-green-700">
+                  <CallButton order={selectedOrder} byName={myName} onLogged={onCallLogged(selectedOrder.id)} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-medium hover:bg-green-700">
                     <Phone className="h-3.5 w-3.5" /> Appeler
-                  </a>
+                  </CallButton>
+                  <CallBadge order={selectedOrder} />
                   <a href={smsHref(selectedOrder.client_phone)} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 text-xs font-medium hover:bg-gray-200">
                     SMS
                   </a>
