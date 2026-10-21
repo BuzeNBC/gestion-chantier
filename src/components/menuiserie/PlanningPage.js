@@ -35,7 +35,9 @@ const useIsMobile = () => {
   return mobile;
 };
 
-export default function PlanningPage({ canEdit = false, embedded = false, showDetail = false }) {
+//   onOpenOrder(order)  ouvre la fiche du bon dans l'interface hôte (menuisier) ;
+//                       sinon, avec showDetail, le détail s'ouvre dans un modal (admin)
+export default function PlanningPage({ canEdit = false, embedded = false, showDetail = false, onOpenOrder }) {
   const { user } = useAuth();
   const isMobile = useIsMobile();
   const calendarRef = useRef(null);
@@ -224,7 +226,11 @@ export default function PlanningPage({ canEdit = false, embedded = false, showDe
             canEdit={canEdit}
             isMobile={isMobile}
             menuisiersById={menuisiersById}
-            onEventClick={(order) => (canEdit ? openSchedule(order) : (showDetail ? setDetailOrder(order) : null))}
+            onEventClick={(order) => {
+              if (canEdit) openSchedule(order);
+              else if (onOpenOrder) onOpenOrder(order);
+              else if (showDetail) setDetailOrder(order);
+            }}
             onEventChange={onEventChange}
             onExternalDrop={onExternalDrop}
             onDateClick={onDateClick}
@@ -259,7 +265,11 @@ export default function PlanningPage({ canEdit = false, embedded = false, showDe
           defaults={schedule.defaults}
           onSave={onScheduleSave}
           onClose={() => setSchedule(null)}
-          onOpenOrder={showDetail ? () => { setDetailOrder(schedule.order); setSchedule(null); } : undefined}
+          onOpenOrder={onOpenOrder
+            ? () => { const o = schedule.order; setSchedule(null); onOpenOrder(o); }
+            : showDetail
+              ? () => { setDetailOrder(schedule.order); setSchedule(null); }
+              : undefined}
         />
       )}
       {detailOrder && (

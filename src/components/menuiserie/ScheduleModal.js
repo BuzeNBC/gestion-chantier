@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Calendar, Clock, AlertTriangle, CalendarX } from 'lucide-react';
+import { Calendar, Clock, AlertTriangle, CalendarX, FileText } from 'lucide-react';
+import { typeLabel, orderInterventions } from '../../services/menuiserieService';
 import Modal from './MenuiserieModal';
 import {
   DURATION_OPTIONS, DEFAULT_DURATION, conflictsFor, hhmm, durationLabel, todayStr,
@@ -39,6 +40,7 @@ const ScheduleModal = ({
   };
   const conflicts = conflictsFor(candidate, orders);
   const nameOf = (id) => menuisiers.find((m) => m.id === id)?.Name || null;
+  const ivs = orderInterventions(order);
 
   const submit = async (patch) => {
     try {
@@ -78,11 +80,22 @@ const ScheduleModal = ({
   return (
     <Modal title={`Rendez-vous — ${order.client_name || 'bon'}`} onClose={onClose}>
       <div className="space-y-4">
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          {order.address ? <p className="text-sm text-gray-500">{order.address}</p> : <span />}
+        {/* Rappel du bon : pour ne pas se tromper d'intervention */}
+        <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm space-y-1">
+          {order.address && <p className="text-gray-700">{order.address}</p>}
+          {order.bt_number && <p className="text-xs text-gray-500">BT {order.bt_number}</p>}
+          {ivs.length > 0 && (
+            <ul className="list-disc list-inside text-xs text-blue-700">
+              {ivs.slice(0, 4).map((iv) => <li key={iv.id}>{typeLabel(iv.type)}</li>)}
+              {ivs.length > 4 && <li className="text-gray-400">+ {ivs.length - 4} autres…</li>}
+            </ul>
+          )}
           {onOpenOrder && (
-            <button onClick={onOpenOrder} className="text-sm text-blue-600 hover:underline">
-              Voir le bon complet
+            <button
+              onClick={onOpenOrder}
+              className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700"
+            >
+              <FileText className="h-3.5 w-3.5" /> Ouvrir le bon
             </button>
           )}
         </div>

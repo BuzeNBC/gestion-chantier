@@ -392,7 +392,11 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
           {view === 'planning' ? (
             <Suspense fallback={<LazySpinner />}>
               {/* L'ouvrier (embedded) consulte seulement ; le menuisier gère. */}
-              <PlanningPage canEdit={!embedded} embedded />
+              <PlanningPage
+                canEdit={!embedded}
+                embedded
+                onOpenOrder={(o) => setSelectedOrderId(o.id)}
+              />
             </Suspense>
           ) : view === 'map' ? (
             <div className="space-y-3">
