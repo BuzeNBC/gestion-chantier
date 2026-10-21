@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { FileText, Ban, AlertTriangle, Phone, Navigation } from 'lucide-react';
+import { FileText, Ban, AlertTriangle, Phone, Navigation, Edit } from 'lucide-react';
 import {
   MENUISERIE_STATUS_STYLES, MENUISERIE_PHOTO_CATEGORIES, typeLabel, statusLabel,
   computeOrderStatus, orderInterventions, BILLING_STATUS_STYLES, billingLabel,
@@ -14,7 +14,9 @@ import AttachmentsEditor from './AttachmentsEditor';
 // Détail complet d'un bon (lecture seule) côté admin : infos, facturation,
 // relances, pièces jointes, interventions (cotes, photos, notes) + rapport PDF.
 // Utilisé dans la liste admin et depuis le planning.
-const OrderDetail = ({ order, hideBilling = false }) => {
+// `onEditIntervention(iv)` : affiche « Modifier » sur chaque intervention
+// (ouvre l'écran photos / cotes / remarques / statut côté menuisier).
+const OrderDetail = ({ order, hideBilling = false, onEditIntervention }) => {
   const [pdfGenerating, setPdfGenerating] = useState(false);
 
   const handleGeneratePdf = async () => {
@@ -180,6 +182,15 @@ const OrderDetail = ({ order, hideBilling = false }) => {
               <span className="font-medium text-blue-700">{typeLabel(iv.type)}</span>
             </div>
             <div className="flex items-center gap-2">
+              {onEditIntervention && (
+                <button
+                  onClick={() => onEditIntervention(iv)}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-green-600 text-white text-xs font-medium hover:bg-green-700"
+                  title="Photos, cotes, remarques, statut"
+                >
+                  <Edit className="h-3.5 w-3.5" /> Modifier
+                </button>
+              )}
               {!hideBilling && Number.isFinite(Number(iv.price_ht)) && iv.price_ht !== null && iv.price_ht !== '' && (
                 <span className="text-sm font-semibold text-gray-800">{fmtEuro(iv.price_ht)}</span>
               )}

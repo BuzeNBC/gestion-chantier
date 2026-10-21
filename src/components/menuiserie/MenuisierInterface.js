@@ -396,6 +396,7 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
                 canEdit={!embedded}
                 embedded
                 onOpenOrder={(o) => setSelectedOrderId(o.id)}
+                onEditIntervention={(o, iv) => { setSelectedOrderId(o.id); openIntervention(iv); }}
               />
             </Suspense>
           ) : view === 'map' ? (

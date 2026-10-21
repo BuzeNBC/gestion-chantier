@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { AlertTriangle, Users, Clock, FileText } from 'lucide-react';
+import { AlertTriangle, Users, Clock, Edit } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { describeDbError } from '../../services/dbErrors';
 import { useAuth } from '../../contexts/AuthContext';
@@ -38,7 +38,9 @@ const useIsMobile = () => {
 
 //   onOpenOrder(order)  ouvre la fiche du bon dans l'interface hôte (menuisier) ;
 //                       sinon, avec showDetail, le détail s'ouvre dans un modal (admin)
-export default function PlanningPage({ canEdit = false, embedded = false, showDetail = false, onOpenOrder }) {
+//   onEditIntervention(order, iv)  ouvre directement l'écran de saisie d'une
+//                       intervention (photos, cotes, remarques, statut)
+export default function PlanningPage({ canEdit = false, embedded = false, showDetail = false, onOpenOrder, onEditIntervention }) {
   const { user } = useAuth();
   const isMobile = useIsMobile();
   const calendarRef = useRef(null);
@@ -252,22 +254,24 @@ export default function PlanningPage({ canEdit = false, embedded = false, showDe
             order={selectedOrder}
             hideBilling={embedded}
             onClose={() => setSelectedId(null)}
+            onEditIntervention={onEditIntervention ? (iv) => onEditIntervention(selectedOrder, iv) : undefined}
             actions={(
               <>
+                {onOpenOrder && (
+                  <button
+                    onClick={() => onOpenOrder(selectedOrder)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-700"
+                    title="Photos, cotes, remarques, statut, rapport"
+                  >
+                    <Edit className="h-3.5 w-3.5" /> Remplir le bon
+                  </button>
+                )}
                 {canEdit && !selectedOrder.cancelled && (
                   <button
                     onClick={() => openSchedule(selectedOrder)}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700"
                   >
                     <Clock className="h-3.5 w-3.5" /> {selectedOrder.scheduled_date ? "Modifier l'horaire" : 'Planifier'}
-                  </button>
-                )}
-                {onOpenOrder && (
-                  <button
-                    onClick={() => onOpenOrder(selectedOrder)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700"
-                  >
-                    <FileText className="h-3.5 w-3.5" /> Ouvrir la fiche
                   </button>
                 )}
               </>
