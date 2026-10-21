@@ -22,6 +22,8 @@ import ScheduleModal from './ScheduleModal';
 import { scheduledLabel, todayStr, timeToMinutes } from '../../services/planningService';
 import useOrdersRealtime from '../../hooks/useOrdersRealtime';
 import useGeolocation from '../../hooks/useGeolocation';
+import useAutoGeocode from '../../hooks/useAutoGeocode';
+import GeocodeProgress from './GeocodeProgress';
 import NearbyOrders from './NearbyOrders';
 import InstallAppHint from '../InstallAppHint';
 import { isPlannable } from '../../services/planningService';
@@ -181,6 +183,10 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
 
   // Les modifications des collègues / de l'admin arrivent toutes seules.
   useOrdersRealtime({ enabled: !!user, onChange: () => loadData({ silent: true }) });
+
+  // Localisation automatique des adresses pas encore géocodées (la carte et
+  // la proximité ne fonctionnent qu'avec des coordonnées).
+  const geoProgress = useAutoGeocode(orders, { enabled: !!user && !isLoading, onDone: () => loadData({ silent: true }) });
 
   // Ouvre une intervention pour édition : on clone localement pour ne pas
   // perdre les modifications non sauvegardées si on revient en arrière.
@@ -363,6 +369,7 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
 
         <main className={`${view === 'planning' ? 'max-w-5xl' : 'max-w-3xl'} mx-auto px-4 py-6 space-y-3`}>
           {!embedded && <InstallAppHint />}
+          {view !== 'map' && <GeocodeProgress progress={geoProgress} />}
 
           {/* Liste des bons / Carte / Planning partagé */}
           <div className="flex rounded-lg bg-gray-200 p-1 text-sm font-medium">
@@ -417,6 +424,10 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
                 )}
               </div>
               {geo.error && <p className="text-xs text-amber-700">{geo.error}</p>}
+              <GeocodeProgress progress={geoProgress} />
+              <p className="text-xs text-gray-500">
+                {openOrders.filter(hasCoords).length} bon{openOrders.filter(hasCoords).length > 1 ? 's' : ''} localisé{openOrders.filter(hasCoords).length > 1 ? 's' : ''} sur {openOrders.length} en cours.
+              </p>
               {!mapCenterEffective && (
                 <p className="text-xs text-gray-500">
                   Touche « Autour de moi » (ou un point de la carte) pour voir les bons dans le rayon.

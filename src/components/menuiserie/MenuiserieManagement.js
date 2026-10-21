@@ -15,7 +15,9 @@ import { isPlannable, addMinutesToTime } from '../../services/planningService';
 import Modal from './MenuiserieModal';
 import ScheduleModal from './ScheduleModal';
 import OrderDetail from './OrderDetail';
+import GeocodeProgress from './GeocodeProgress';
 import useOrdersRealtime from '../../hooks/useOrdersRealtime';
+import useAutoGeocode from '../../hooks/useAutoGeocode';
 import { DURATION_OPTIONS, DEFAULT_DURATION, hhmm, durationLabel, scheduledLabel } from '../../services/planningService';
 import { supabase } from '../../services/supabase';
 import { DBService, STORES, generateUUID } from '../../services/dbService';
@@ -1116,6 +1118,10 @@ function MenuiserieManagement() {
   // admin se met à jour toute seule.
   useOrdersRealtime({ onChange: () => loadData({ silent: true }) });
 
+  // Localisation automatique des adresses pas encore géocodées (bons créés
+  // avant la carte, ou géocodeur indisponible à l'enregistrement).
+  const geoProgress = useAutoGeocode(orders, { enabled: !isLoading, onDone: () => loadData({ silent: true }) });
+
   // Persiste de nouvelles tâches dans le corps d'état Menuiserie pour qu'elles
   // soient disponibles dans la liste déroulante des prochains bons.
   const persistCustomTasksIfAny = async (customTasks) => {
@@ -1396,6 +1402,8 @@ function MenuiserieManagement() {
           </button>
         </div>
       </div>
+
+      <GeocodeProgress progress={geoProgress} />
 
       {/* Sous-sections */}
       <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
