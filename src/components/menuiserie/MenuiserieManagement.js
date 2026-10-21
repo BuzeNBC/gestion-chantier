@@ -23,8 +23,8 @@ import InterventionLinesEditor from './InterventionLinesEditor';
 import AttachmentsEditor from './AttachmentsEditor';
 
 const Modal = memo(({ title, onClose, children, wide = false }) => (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-    <div className={`bg-white p-6 rounded-lg shadow-lg w-full ${wide ? 'max-w-3xl' : 'max-w-lg'} max-h-[90vh] overflow-y-auto`}>
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-2 sm:p-4">
+    <div className={`bg-white p-4 sm:p-6 rounded-lg shadow-lg w-full ${wide ? 'max-w-3xl' : 'max-w-lg'} max-h-[92vh] overflow-y-auto`}>
       <div className="flex justify-between items-center mb-5">
         <h2 className="text-xl font-semibold">{title}</h2>
         <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
@@ -1304,17 +1304,17 @@ function MenuiserieManagement() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-4xl font-bold text-gray-800">Menuiserie</h1>
-        <div className="flex items-center gap-2">
+        <h1 className="text-2xl lg:text-4xl font-bold text-gray-800">Menuiserie</h1>
+        <div className="flex items-center gap-2 flex-1 sm:flex-none justify-end">
           <button
             onClick={() => setModal({ type: 'export' })}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800"
+            className="flex items-center justify-center gap-2 px-3 lg:px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 text-sm lg:text-base"
           >
             <Download className="h-5 w-5" /> Export
           </button>
           <button
             onClick={() => setModal({ type: 'create' })}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="flex items-center justify-center gap-2 px-3 lg:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm lg:text-base"
           >
             <Plus className="h-5 w-5" /> Nouveau bon
           </button>
@@ -1344,12 +1344,12 @@ function MenuiserieManagement() {
             <button
               key={value}
               onClick={() => setCategory(value)}
-              className={`px-4 py-2.5 text-sm font-medium rounded-t-lg border-b-2 -mb-px whitespace-nowrap ${
+              className={`px-2.5 py-2 lg:px-4 lg:py-2.5 text-xs lg:text-sm font-medium rounded-t-lg border-b-2 -mb-px whitespace-nowrap ${
                 active ? activeStyle : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
               }`}
             >
               {label}
-              <span className={`ml-2 px-1.5 py-0.5 rounded-full text-xs ${
+              <span className={`ml-1.5 lg:ml-2 px-1.5 py-0.5 rounded-full text-xs ${
                 active ? activeBadge : 'bg-gray-100 text-gray-600'
               }`}>
                 {count}
@@ -1359,23 +1359,23 @@ function MenuiserieManagement() {
         })}
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-500">Total</p><p className="text-2xl font-bold text-gray-800">{stats.total}</p></div>
-        <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-500">À faire</p><p className="text-2xl font-bold text-gray-600">{stats.todo}</p></div>
-        <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-500">En cours</p><p className="text-2xl font-bold text-blue-600">{stats.inProgress}</p></div>
-        <div className="bg-white p-4 rounded-lg shadow"><p className="text-sm text-gray-500">Terminés</p><p className="text-2xl font-bold text-green-600">{stats.completed}</p></div>
+      {/* Stats — compactes sur mobile (3 colonnes), confortables sur grand écran */}
+      <div className="grid grid-cols-3 lg:grid-cols-6 gap-2 lg:gap-4">
+        <div className="bg-white p-2.5 lg:p-4 rounded-lg shadow"><p className="text-xs lg:text-sm text-gray-500 leading-tight">Total</p><p className="text-lg lg:text-2xl font-bold text-gray-800">{stats.total}</p></div>
+        <div className="bg-white p-2.5 lg:p-4 rounded-lg shadow"><p className="text-xs lg:text-sm text-gray-500 leading-tight">À faire</p><p className="text-lg lg:text-2xl font-bold text-gray-600">{stats.todo}</p></div>
+        <div className="bg-white p-2.5 lg:p-4 rounded-lg shadow"><p className="text-xs lg:text-sm text-gray-500 leading-tight">En cours</p><p className="text-lg lg:text-2xl font-bold text-blue-600">{stats.inProgress}</p></div>
+        <div className="bg-white p-2.5 lg:p-4 rounded-lg shadow"><p className="text-xs lg:text-sm text-gray-500 leading-tight">Terminés</p><p className="text-lg lg:text-2xl font-bold text-green-600">{stats.completed}</p></div>
         <button
           onClick={() => setBillingFilter((f) => (f === 'pending' ? 'all' : 'pending'))}
-          className={`bg-white p-4 rounded-lg shadow text-left hover:ring-2 hover:ring-amber-300 ${billingFilter === 'pending' ? 'ring-2 ring-amber-400' : ''}`}
+          className={`bg-white p-2.5 lg:p-4 rounded-lg shadow text-left hover:ring-2 hover:ring-amber-300 ${billingFilter === 'pending' ? 'ring-2 ring-amber-400' : ''}`}
         >
-          <p className="text-sm text-gray-500">Devis / à facturer</p><p className="text-2xl font-bold text-amber-600">{stats.aTraiter}</p>
+          <p className="text-xs lg:text-sm text-gray-500 leading-tight">Devis / à facturer</p><p className="text-lg lg:text-2xl font-bold text-amber-600">{stats.aTraiter}</p>
         </button>
         <button
           onClick={() => setBillingFilter((f) => (f === 'relances' ? 'all' : 'relances'))}
-          className={`bg-white p-4 rounded-lg shadow text-left hover:ring-2 hover:ring-red-300 ${billingFilter === 'relances' ? 'ring-2 ring-red-400' : ''}`}
+          className={`bg-white p-2.5 lg:p-4 rounded-lg shadow text-left hover:ring-2 hover:ring-red-300 ${billingFilter === 'relances' ? 'ring-2 ring-red-400' : ''}`}
         >
-          <p className="text-sm text-gray-500">Avec relances</p><p className="text-2xl font-bold text-red-600">{stats.relances}</p>
+          <p className="text-xs lg:text-sm text-gray-500 leading-tight">Avec relances</p><p className="text-lg lg:text-2xl font-bold text-red-600">{stats.relances}</p>
         </button>
       </div>
 
@@ -1391,15 +1391,15 @@ function MenuiserieManagement() {
             className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg">
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="flex-1 sm:flex-none min-w-[30%] sm:min-w-0 px-2 lg:px-3 py-2 text-sm border border-gray-300 rounded-lg">
           <option value="all">Tous les statuts</option>
           {Object.entries(MENUISERIE_STATUS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
-        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg">
+        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="flex-1 sm:flex-none min-w-[30%] sm:min-w-0 px-2 lg:px-3 py-2 text-sm border border-gray-300 rounded-lg">
           <option value="all">Tous les types</option>
           {typeFilterOptions.map((t) => <option key={t} value={t}>{typeLabel(t)}</option>)}
         </select>
-        <select value={billingFilter} onChange={(e) => setBillingFilter(e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg">
+        <select value={billingFilter} onChange={(e) => setBillingFilter(e.target.value)} className="flex-1 sm:flex-none min-w-[30%] sm:min-w-0 px-2 lg:px-3 py-2 text-sm border border-gray-300 rounded-lg">
           <option value="all">Toute facturation</option>
           <option value="pending">À traiter (non facturé)</option>
           {Object.entries(BILLING_STATUS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -1452,7 +1452,7 @@ function MenuiserieManagement() {
           return (
           <React.Fragment key={order.id}>
           {monthHeader}
-          <div className={`p-4 flex items-center justify-between gap-4 ${rowStyle}`}>
+          <div className={`p-3 lg:p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4 ${rowStyle}`}>
             <div className="space-y-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 {order.cancelled && (
@@ -1558,7 +1558,7 @@ function MenuiserieManagement() {
                 </p>
               )}
             </div>
-            <div className="flex items-center gap-1 flex-shrink-0">
+            <div className="flex items-center gap-1 flex-shrink-0 flex-wrap justify-end self-end sm:self-auto">
               {orderCategory(order) === 'commande_portes' && (
                 <button
                   onClick={() => setModal({ type: 'devis_valide', data: order })}
