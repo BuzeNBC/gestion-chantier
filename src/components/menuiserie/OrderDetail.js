@@ -10,6 +10,7 @@ import { scheduledLabel } from '../../services/planningService';
 import { generateMenuiseriePdf, openOrDownloadPdf } from '../../services/menuiseriePdf';
 import MeasurementsEditor from './MeasurementsEditor';
 import AttachmentsEditor from './AttachmentsEditor';
+import CallButton, { CallBadge } from './CallButton';
 
 // Détail complet d'un bon (lecture seule) côté admin : infos, facturation,
 // relances, pièces jointes, interventions (cotes, photos, notes) + rapport PDF.
@@ -73,10 +74,11 @@ const OrderDetail = ({ order, hideBilling = false, onEditIntervention }) => {
         <div className="flex items-center gap-2 flex-wrap">
           <span><span className="text-gray-500">Tél :</span> {order.client_phone}</span>
           {telHref(order.client_phone) && (
-            <a href={telHref(order.client_phone)} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800 hover:bg-green-200">
+            <CallButton order={order} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800 hover:bg-green-200">
               <Phone className="h-3 w-3" /> Appeler
-            </a>
+            </CallButton>
           )}
+          <CallBadge order={order} />
         </div>
       )}
       {order.address && (

@@ -17,6 +17,7 @@ import ScheduleModal from './ScheduleModal';
 import OrderDetail from './OrderDetail';
 import GeocodeProgress from './GeocodeProgress';
 import OrderSidePanel from './OrderSidePanel';
+import CallButton, { CallBadge } from './CallButton';
 import useOrdersRealtime from '../../hooks/useOrdersRealtime';
 import useAutoGeocode from '../../hooks/useAutoGeocode';
 import { DURATION_OPTIONS, DEFAULT_DURATION, hhmm, durationLabel, scheduledLabel } from '../../services/planningService';
@@ -82,9 +83,9 @@ const RowActionsMenu = ({ order, actions }) => {
         {(tel || dirs) && <div className="my-1 border-t border-gray-100" />}
         {tel && (
           <MenuItem>
-            <a href={tel} className={`${menuItemClass} text-green-700`}>
+            <CallButton order={order} byName="Admin" onLogged={(next) => actions.callLogged?.(order, next)} className={`${menuItemClass} text-green-700`}>
               <Phone className="h-4 w-4" /> Appeler {order.client_phone}
-            </a>
+            </CallButton>
           </MenuItem>
         )}
         {dirs && (
@@ -1609,6 +1610,7 @@ function MenuiserieManagement() {
                     {relances.length} relance{relances.length > 1 ? 's' : ''}
                   </span>
                 )}
+                <CallBadge order={order} />
                 {ivs.length > 1 && (
                   <span className="text-xs text-gray-500">
                     {completedCount}/{ivs.length} interventions
@@ -1672,9 +1674,14 @@ function MenuiserieManagement() {
             </div>
             <div className="flex items-center gap-1 flex-shrink-0 self-end sm:self-auto">
               {telHref(order.client_phone) && (
-                <a href={telHref(order.client_phone)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg" aria-label="Appeler" title={`Appeler ${order.client_phone}`}>
+                <CallButton
+                  order={order}
+                  byName="Admin"
+                  onLogged={(next) => setOrders((prev) => prev.map((x) => (x.id === order.id ? { ...x, call_log: next } : x)))}
+                  className="p-2 text-green-600 hover:bg-green-50 rounded-lg"
+                >
                   <Phone className="h-4 w-4" />
-                </a>
+                </CallButton>
               )}
               {!order.cancelled && (
                 <button
@@ -1701,6 +1708,7 @@ function MenuiserieManagement() {
                   devisValide: (o) => setModal({ type: 'devis_valide', data: o }),
                   cancel: (o) => setModal({ type: 'cancel', data: o }),
                   remove: (o) => handleDelete(o.id),
+                  callLogged: (o, next) => setOrders((prev) => prev.map((x) => (x.id === o.id ? { ...x, call_log: next } : x))),
                 }}
               />
             </div>

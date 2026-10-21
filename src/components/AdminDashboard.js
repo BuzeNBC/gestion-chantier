@@ -207,11 +207,13 @@ function AdminDashboard() {
     }
   };
 
+  // Le vrai compte admin (rôle vérifié en base) bascule librement entre les
+  // deux modes, sans redemander le mot de passe.
   const handleRoleButtonClick = () => {
-    if (userRole === 'worker') {
+    if (realUserRole === 'admin') {
+      handleRoleChange(userRole === 'worker' ? 'admin' : 'worker');
+    } else if (userRole === 'worker') {
       setShowLoginModal(true);
-    } else {
-      handleRoleChange('worker');
     }
   };
 
