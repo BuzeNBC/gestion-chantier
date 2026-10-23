@@ -50,6 +50,34 @@ export async function generateMenuiseriePdf(order) {
       .replace(/[…]/g, '...');
   };
 
+  // Découpe un texte en lignes qui tiennent dans `maxWidth` points pour la
+  // police / taille données (pdf-lib n'enveloppe pas le texte). Respecte les
+  // retours à la ligne saisis ; un mot trop long est coupé.
+  const wrapText = (text, font, size, maxWidth) => {
+    const width = (s) => {
+      try { return font.widthOfTextAtSize(s, size); } catch (e) { return s.length * size * 0.55; }
+    };
+    const out = [];
+    for (const paragraph of String(text ?? '').split(/\r?\n/)) {
+      const words = paragraph.split(/\s+/).filter(Boolean);
+      if (words.length === 0) { out.push(''); continue; }
+      let line = '';
+      for (const word of words) {
+        const candidate = line ? `${line} ${word}` : word;
+        if (width(candidate) <= maxWidth) { line = candidate; continue; }
+        if (line) out.push(line);
+        let chunk = '';
+        for (const ch of word) {
+          if (chunk && width(chunk + ch) > maxWidth) { out.push(chunk); chunk = ''; }
+          chunk += ch;
+        }
+        line = chunk;
+      }
+      if (line) out.push(line);
+    }
+    return out;
+  };
+
   const drawHeader = (isFirstPage = false) => {
     const headerHeight = isFirstPage ? 110 : 50;
     page.drawRectangle({
@@ -207,26 +235,31 @@ export async function generateMenuiseriePdf(order) {
 
       for (let i = 0; i < measurements.length; i++) {
         const m = measurements[i];
-        const rowH = 14;
+        // Chaque cellule est enveloppée dans sa colonne ; la hauteur de ligne
+        // suit la cellule la plus longue (les notes de cotes ne sont plus coupées).
+        const cells = [
+          cleanText(m.repere) || '-',
+          cleanText(m.largeur) || '-',
+          cleanText(m.hauteur) || '-',
+          cleanText(m.ouvrant) || '-',
+          cleanText(m.notes) || '-',
+        ].map((txt, idx) => wrapText(txt, helvetica, 8, cols[idx].w - 8));
+        const nLines = Math.max(1, ...cells.map((c) => c.length));
+        const rowH = 14 + (nLines - 1) * 11;
         if (y - rowH < MARGIN + 30) {
           page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
           y = drawHeader(false);
         }
         if (i % 2 === 0) {
           page.drawRectangle({
-            x: MARGIN, y: y - 3, width: CONTENT_WIDTH, height: rowH, color: backgroundColor,
+            x: MARGIN, y: y - 3 - (nLines - 1) * 11, width: CONTENT_WIDTH, height: rowH, color: backgroundColor,
           });
         }
-        const row = [
-          cleanText(m.repere) || '—',
-          cleanText(m.largeur) || '—',
-          cleanText(m.hauteur) || '—',
-          cleanText(m.ouvrant) || '—',
-          cleanText(m.notes) || '—',
-        ];
-        for (let idx = 0; idx < row.length; idx++) {
-          page.drawText(row[idx].slice(0, 60), {
-            x: cols[idx].x + 4, y: y + 1, size: 8, font: helvetica, color: textColor,
+        for (let idx = 0; idx < cells.length; idx++) {
+          cells[idx].forEach((line, li) => {
+            page.drawText(line, {
+              x: cols[idx].x + 4, y: y + 1 - li * 11, size: 8, font: helvetica, color: textColor,
+            });
           });
         }
         y -= rowH;
@@ -290,9 +323,13 @@ export async function generateMenuiseriePdf(order) {
         x: MARGIN, y, size: 10, font: helveticaBold, color: primaryColor,
       });
       y -= 14;
-      const lines = cleanText(iv.notes).split('\n');
+      const lines = wrapText(cleanText(iv.notes), helvetica, 9, CONTENT_WIDTH);
       for (const line of lines) {
-        page.drawText(line.slice(0, 130), { x: MARGIN, y, size: 9, font: helvetica, color: textColor });
+        if (y - 12 < MARGIN + 30) {
+          page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+          y = drawHeader(false);
+        }
+        page.drawText(line, { x: MARGIN, y, size: 9, font: helvetica, color: textColor });
         y -= 12;
       }
     }
