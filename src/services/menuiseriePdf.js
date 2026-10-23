@@ -256,11 +256,11 @@ export async function generateMenuiseriePdf(order) {
           });
         }
         for (let idx = 0; idx < cells.length; idx++) {
-          cells[idx].forEach((line, li) => {
-            page.drawText(line, {
+          for (let li = 0; li < cells[idx].length; li++) {
+            page.drawText(cells[idx][li], {
               x: cols[idx].x + 4, y: y + 1 - li * 11, size: 8, font: helvetica, color: textColor,
             });
-          });
+          }
         }
         y -= rowH;
       }
