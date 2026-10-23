@@ -14,3 +14,30 @@ code {
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* --- Planning menuiserie (FullCalendar) ----------------------------------- */
+.fc { --fc-border-color: #e5e7eb; --fc-today-bg-color: #eff6ff; --fc-now-indicator-color: #dc2626; font-size: 0.85rem; }
+.fc .fc-toolbar-title { font-size: 1.1rem; font-weight: 600; text-transform: capitalize; }
+.fc .fc-button { background: #2563eb; border-color: #2563eb; text-transform: capitalize; padding: 0.3rem 0.6rem; font-size: 0.85rem; }
+.fc .fc-button:hover, .fc .fc-button-active { background: #1d4ed8 !important; border-color: #1d4ed8 !important; }
+.fc .fc-button:focus { box-shadow: none; }
+.fc .fc-timegrid-slot { height: 2.2rem; }
+.fc .fc-list-event-dot { display: none; }
+.fc-ev { padding: 1px 3px; line-height: 1.2; overflow: hidden; }
+.fc-ev-line { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.fc-ev-time { font-weight: 600; opacity: 0.9; white-space: nowrap; }
+.fc-ev-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.fc-ev-sub { font-size: 0.7rem; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fc-ev-who { font-size: 0.6rem; font-weight: 700; background: rgba(255, 255, 255, 0.9); color: #111827; border-radius: 9999px; padding: 0 4px; flex-shrink: 0; }
+.fc-ev-urgent { font-weight: 900; background: #dc2626; color: #fff; border-radius: 9999px; width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; font-size: 0.65rem; flex-shrink: 0; }
+.fc-ev-list .fc-ev-title { white-space: normal; }
+.fc-ev-list .fc-ev-who { background: #e5e7eb; }
+.fc-event.fc-urgent { border-left: 4px solid #dc2626 !important; }
+.fc-event.fc-conflict { outline: 2px dashed #f59e0b; outline-offset: -2px; }
+.fc-event.fc-done { opacity: 0.5; }
+.fc-event.fc-selected { box-shadow: 0 0 0 3px #111827; z-index: 5; }
+@media (max-width: 767px) {
+  .fc .fc-toolbar { flex-wrap: wrap; gap: 0.4rem; }
+  .fc .fc-toolbar-title { font-size: 1rem; }
+  .fc .fc-timegrid-slot { height: 2.6rem; }
+}

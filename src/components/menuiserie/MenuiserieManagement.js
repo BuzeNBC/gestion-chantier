@@ -1,0 +1,2018 @@
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
+import { Menu, MenuButton, MenuItems, MenuItem } from '@headlessui/react';
+import {
+  Plus, Edit, Trash, Search, Eye, MapPin, MapPinOff, User, Calendar, FileText, Download,
+  Euro, Bell, AlertTriangle, Inbox, BadgeCheck, Ban, MoreVertical, Phone, Navigation, Clock,
+  Map as MapIcon, Loader2,
+} from 'lucide-react';
+import AddressAutocomplete from './AddressAutocomplete';
+import NearbyOrders from './NearbyOrders';
+import { hasCoords, coordsOf, ordersWithin, needsGeocoding, geocodingFailed } from '../../services/geoUtils';
+import {
+  geocodeOne, geocodePatch, geocodeFailPatch, geocodeClearPatch, backfillGeocoding,
+} from '../../services/geocodingService';
+import { isPlannable, addMinutesToTime } from '../../services/planningService';
+import Modal from './MenuiserieModal';
+import ScheduleModal from './ScheduleModal';
+import OrderDetail from './OrderDetail';
+import GeocodeProgress from './GeocodeProgress';
+import OrderSidePanel from './OrderSidePanel';
+import CallButton, { CallBadge } from './CallButton';
+import useOrdersRealtime from '../../hooks/useOrdersRealtime';
+import useAutoGeocode from '../../hooks/useAutoGeocode';
+import { DURATION_OPTIONS, DEFAULT_DURATION, hhmm, durationLabel, scheduledLabel } from '../../services/planningService';
+import { supabase } from '../../services/supabase';
+import { describeDbError } from '../../services/dbErrors';
+import { DBService, STORES, generateUUID } from '../../services/dbService';
+import {
+  MENUISERIE_STATUS, MENUISERIE_STATUS_STYLES,
+  typeLabel, statusLabel, findMenuiserieTrade,
+  newIntervention, computeOrderStatus, orderInterventions,
+  BILLING_STATUS, BILLING_STATUS_STYLES, billingLabel,
+  isOrderBillable, effectiveBillingStatus,
+  MENUISERIE_CATEGORIES, orderCategory, categoryLabel, compareOrders, orderReceivedDate,
+  sortInterventionOptions, MENUISERIE_TABS, orderMatchesTab, orderFactureMonth,
+  relanceBadgeStyle, relanceBorderStyle, orderRelances, newRelance,
+  orderTotalHt, fmtEuro, telHref, directionsUrls,
+} from '../../services/menuiserieService';
+import { exportMonthCsv, exportMonthPdf, monthLabel } from '../../services/menuiserieExport';
+import InterventionLinesEditor from './InterventionLinesEditor';
+import AttachmentsEditor from './AttachmentsEditor';
+
+// Carte (Leaflet) chargée à la demande.
+const OrdersMap = lazy(() => import('./OrdersMap'));
+
+// Libellé d'un onglet (sous-sections + Devis validés + Terminés).
+const tabLabel = (tab) => (MENUISERIE_TABS.find(([v]) => v === tab) || [])[1] || tab;
+
+// Menu « ⋯ » d'une ligne de bon : regroupe les actions secondaires pour ne
+// garder que Voir / Modifier visibles (lisibilité, surtout sur téléphone).
+const menuItemClass = 'flex w-full items-center gap-2 px-3 py-2 text-sm text-left data-[focus]:bg-gray-100 rounded-md';
+const RowActionsMenu = ({ order, actions }) => {
+  const isChantierNeuf = orderCategory(order) === 'commande_portes';
+  const tel = telHref(order.client_phone);
+  const dirs = directionsUrls(order);
+  return (
+    <Menu>
+      <MenuButton className="p-2 rounded-lg text-gray-600 hover:bg-gray-100 data-[open]:bg-gray-200" aria-label="Plus d'actions" title="Plus d'actions">
+        <MoreVertical className="h-4 w-4" />
+      </MenuButton>
+      <MenuItems anchor="bottom end" className="z-50 mt-1 w-60 rounded-lg bg-white p-1 shadow-lg ring-1 ring-black/5 focus:outline-none [--anchor-gap:4px]">
+        <MenuItem>
+          <button onClick={() => actions.billing(order)} className={`${menuItemClass} text-emerald-700`}>
+            <Euro className="h-4 w-4" /> Facturation
+          </button>
+        </MenuItem>
+        <MenuItem>
+          <button onClick={() => actions.relances(order)} className={`${menuItemClass} text-amber-700`}>
+            <Bell className="h-4 w-4" /> Relances
+          </button>
+        </MenuItem>
+        <MenuItem>
+          <button onClick={() => actions.toggleUrgent(order)} className={`${menuItemClass} ${order.is_urgent ? 'text-red-700' : 'text-gray-700'}`}>
+            <AlertTriangle className="h-4 w-4" /> {order.is_urgent ? "Retirer l'urgence" : 'Marquer urgent'}
+          </button>
+        </MenuItem>
+        {isChantierNeuf && (
+          <MenuItem>
+            <button onClick={() => actions.devisValide(order)} className={`${menuItemClass} text-teal-700`}>
+              <BadgeCheck className="h-4 w-4" /> {order.devis_valide ? 'Devis validé — modifier' : 'Valider le devis'}
+            </button>
+          </MenuItem>
+        )}
+        {(tel || dirs) && <div className="my-1 border-t border-gray-100" />}
+        {tel && (
+          <MenuItem>
+            <CallButton order={order} byName="Admin" onLogged={(next) => actions.callLogged?.(order, next)} className={`${menuItemClass} text-green-700`}>
+              <Phone className="h-4 w-4" /> Appeler {order.client_phone}
+            </CallButton>
+          </MenuItem>
+        )}
+        {dirs && (
+          <MenuItem>
+            <a href={dirs.google} target="_blank" rel="noopener noreferrer" className={`${menuItemClass} text-blue-700`}>
+              <Navigation className="h-4 w-4" /> Itinéraire
+            </a>
+          </MenuItem>
+        )}
+        <div className="my-1 border-t border-gray-100" />
+        <MenuItem>
+          <button onClick={() => actions.cancel(order)} className={`${menuItemClass} text-gray-700`}>
+            <Ban className="h-4 w-4" /> {order.cancelled ? "Annulation — voir / rétablir" : 'Annuler le bon'}
+          </button>
+        </MenuItem>
+        <MenuItem>
+          <button onClick={() => actions.remove(order)} className={`${menuItemClass} text-red-600`}>
+            <Trash className="h-4 w-4" /> Supprimer
+          </button>
+        </MenuItem>
+      </MenuItems>
+    </Menu>
+  );
+};
+
+const emptyForm = {
+  client_name: '',
+  client_phone: '',
+  address: '',
+  description: '',
+  assigned_to: '',
+  scheduled_date: '',
+  scheduled_time: '',
+  duration_minutes: DEFAULT_DURATION,
+  reference: '',
+  bt_number: '',
+  charge_affaire: '',
+  is_urgent: false,
+  received_date: '',
+  devis_valide: false,
+  devis_valide_date: '',
+  // Géolocalisation (remplie par l'autocomplétion ou au submit)
+  latitude: null,
+  longitude: null,
+  geocode_label: null,
+  geocode_score: null,
+  geocode_address: null,
+  geocode_source: null,
+  geocoded_at: null,
+};
+
+// Champs géo d'un bon existant -> état du formulaire
+const geoFieldsFrom = (order) => ({
+  latitude: order.latitude ?? null,
+  longitude: order.longitude ?? null,
+  geocode_label: order.geocode_label || null,
+  geocode_score: order.geocode_score ?? null,
+  geocode_address: order.geocode_address || null,
+  geocode_source: order.geocode_source || null,
+  geocoded_at: order.geocoded_at || null,
+});
+
+// Bandeau de rétro-géocodage (modal Carte) : localise en tâche de fond les
+// bons qui ont une adresse mais pas de coordonnées.
+const GeocodeBackfill = ({ orders, onDone }) => {
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState(null);
+  const [retryFailed, setRetryFailed] = useState(false);
+  const stopRef = useRef(false);
+  const todo = orders.filter((o) => needsGeocoding(o) || (retryFailed && geocodingFailed(o)));
+  const failedCount = orders.filter(geocodingFailed).length;
+
+  const run = async () => {
+    stopRef.current = false;
+    setRunning(true);
+    setProgress({ done: 0, total: todo.length, ok: 0, failed: 0, errors: 0 });
+    try {
+      const stats = await backfillGeocoding(todo, {
+        update: async (id, patch) => {
+          const { error } = await supabase.from('menuiserie_orders').update(patch).eq('id', id);
+          if (error) throw error;
+        },
+        onProgress: setProgress,
+        shouldStop: () => stopRef.current,
+      });
+      setProgress({ ...stats, finished: true });
+    } finally {
+      setRunning(false);
+      onDone?.();
+    }
+  };
+
+  if (todo.length === 0 && !progress) {
+    if (failedCount === 0) return null;
+    return (
+      <div className="mb-3 px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600 flex items-center gap-3 flex-wrap">
+        <MapPinOff className="h-4 w-4" />
+        {failedCount} adresse{failedCount > 1 ? 's' : ''} non localisable{failedCount > 1 ? 's' : ''} (précise numéro, rue et ville dans le bon).
+        <label className="flex items-center gap-1 cursor-pointer ml-auto">
+          <input type="checkbox" checked={retryFailed} onChange={(e) => setRetryFailed(e.target.checked)} className="h-3.5 w-3.5" />
+          Réessayer ces adresses
+        </label>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm flex items-center gap-3 flex-wrap">
+      {running ? (
+        <>
+          <Loader2 className="h-4 w-4 animate-spin text-amber-700" />
+          <span>Localisation en cours… {progress?.done || 0}/{progress?.total || todo.length}</span>
+          <button onClick={() => { stopRef.current = true; }} className="ml-auto px-3 py-1 rounded-lg border border-amber-300 text-amber-800 text-xs">
+            Arrêter
+          </button>
+        </>
+      ) : progress?.finished ? (
+        <>
+          <MapPin className="h-4 w-4 text-green-700" />
+          <span>{progress.ok} localisée{progress.ok > 1 ? 's' : ''}, {progress.failed} non localisée{progress.failed > 1 ? 's' : ''}{progress.errors ? `, ${progress.errors} erreur(s) réseau` : ''}.</span>
+          {todo.length > 0 && (
+            <button onClick={run} className="ml-auto px-3 py-1 rounded-lg bg-amber-600 text-white text-xs">Relancer ({todo.length})</button>
+          )}
+        </>
+      ) : (
+        <>
+          <MapPinOff className="h-4 w-4 text-amber-700" />
+          <span>{todo.length} bon{todo.length > 1 ? 's' : ''} avec une adresse non localisée.</span>
+          <label className="flex items-center gap-1 cursor-pointer text-xs">
+            <input type="checkbox" checked={retryFailed} onChange={(e) => setRetryFailed(e.target.checked)} className="h-3.5 w-3.5" />
+            inclure les échecs précédents
+          </label>
+          <button onClick={run} className="ml-auto px-3 py-1 rounded-lg bg-amber-600 text-white text-xs hover:bg-amber-700">
+            Géocoder maintenant
+          </button>
+        </>
+      )}
+    </div>
+  );
+};
+
+// Construit les `interventionLines` initiales du formulaire à partir d'un bon
+// existant (édition) ou retourne une ligne vide (création).
+const initialLinesFromOrder = (order) => {
+  const existing = orderInterventions(order);
+  if (existing.length === 0) {
+    return [{ lineId: 'l-init', type: '', customMode: false, customText: '' }];
+  }
+  return existing.map((iv) => ({
+    lineId: 'l-' + iv.id,
+    type: iv.type || '',
+    customMode: false,
+    customText: '',
+    // Garde la référence à l'intervention existante (avec ses cotes/photos/etc)
+    // pour la repasser intacte côté parent au submit.
+    existing: iv,
+  }));
+};
+
+// `interventionOptions` = les tâches du corps d'état « Menuiserie ».
+// `chargeAffaireOptions` = liste des chargé(e)s d'affaire (table charge_affaires).
+const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOptions, defaultCategory, defaultDevisValide = false, onSubmit, onCancel }) => {
+  const [form, setForm] = useState(order ? {
+    client_name: order.client_name || '',
+    client_phone: order.client_phone || '',
+    address: order.address || '',
+    description: order.description || '',
+    assigned_to: order.assigned_to || '',
+    scheduled_date: order.scheduled_date || '',
+    scheduled_time: hhmm(order.scheduled_time),
+    duration_minutes: order.duration_minutes || DEFAULT_DURATION,
+    reference: order.reference || '',
+    bt_number: order.bt_number || '',
+    charge_affaire: order.charge_affaire || '',
+    category: orderCategory(order),
+    is_urgent: !!order.is_urgent,
+    received_date: order.received_date || '',
+    devis_valide: !!order.devis_valide,
+    devis_valide_date: order.devis_valide_date || '',
+    ...geoFieldsFrom(order),
+  } : {
+    ...emptyForm,
+    category: defaultCategory || 'petites_interventions',
+    devis_valide: !!defaultDevisValide,
+    devis_valide_date: defaultDevisValide ? new Date().toISOString().slice(0, 10) : '',
+    // Par défaut, le bon est reçu aujourd'hui.
+    received_date: new Date().toISOString().slice(0, 10),
+  });
+  // Liste éditable d'interventions (cf. InterventionLinesEditor).
+  const [interventionLines, setInterventionLines] = useState(() => initialLinesFromOrder(order));
+  // Chargé d'affaire : possibilité d'en ajouter un nouveau.
+  const [customCAMode, setCustomCAMode] = useState(false);
+  const [customCA, setCustomCA] = useState('');
+  // Pièces jointes (PDF, images, docs…). Pour un nouveau bon on génère l'id
+  // upfront pour pouvoir uploader dans Storage avant la création de la ligne SQL.
+  const [attachments, setAttachments] = useState(order?.attachments || []);
+  const [formOrderId] = useState(() => order?.id || generateUUID());
+  const [submitting, setSubmitting] = useState(false);
+
+  const set = (field, value) => setForm((f) => ({ ...f, [field]: value }));
+
+  // Même logique pour le chargé d'affaire (préservation à l'édition).
+  const caChoices = form.charge_affaire && !chargeAffaireOptions.includes(form.charge_affaire)
+    ? [form.charge_affaire, ...chargeAffaireOptions]
+    : chargeAffaireOptions;
+
+  const submit = async () => {
+    if (submitting) return;
+    if (!form.client_name.trim()) {
+      alert('Le nom du client est obligatoire.');
+      return;
+    }
+    if (form.category === 'commande_portes' && form.devis_valide && !form.devis_valide_date) {
+      alert('Renseigne la date de validation du devis.');
+      return;
+    }
+    // Construire les interventions à partir des lignes
+    const interventions = [];
+    const newTaskTypes = [];
+    for (const line of interventionLines) {
+      const t = (line.customMode ? line.customText : line.type).trim();
+      if (!t) continue;
+      if (line.existing) {
+        // Édition d'une intervention déjà existante : on garde tout, on met juste à jour le type
+        interventions.push({ ...line.existing, type: t });
+      } else {
+        interventions.push(newIntervention(t));
+      }
+      if (line.customMode && !interventionOptions.includes(t) && !newTaskTypes.includes(t)) {
+        newTaskTypes.push(t);
+      }
+    }
+    if (interventions.length === 0) {
+      alert("Ajoute au moins une intervention.");
+      return;
+    }
+    const effectiveCA = customCAMode ? customCA.trim() : form.charge_affaire.trim();
+
+    // Géocodage : si l'adresse n'a jamais été localisée, ou a changé depuis,
+    // on tente l'API Adresse avant d'enregistrer (le géocodeur indisponible
+    // n'empêche pas l'enregistrement : le bon sera retenté plus tard).
+    const address = form.address.trim();
+    let geo = {
+      latitude: form.latitude, longitude: form.longitude, geocode_label: form.geocode_label,
+      geocode_score: form.geocode_score, geocode_address: form.geocode_address,
+      geocode_source: form.geocode_source, geocoded_at: form.geocoded_at,
+    };
+    setSubmitting(true);
+    try {
+      if (!address) {
+        geo = geocodeClearPatch();
+      } else if (!hasCoords(form) || String(form.geocode_address || '') !== address) {
+        try {
+          const hit = await geocodeOne(address);
+          geo = hit ? geocodePatch(hit, address) : geocodeFailPatch(address);
+        } catch (e) {
+          console.warn('Géocodeur indisponible, adresse enregistrée sans coordonnées :', e);
+        }
+      }
+    } finally {
+      setSubmitting(false);
+    }
+
+    onSubmit({
+      ...form,
+      address,
+      ...geo,
+      interventions,
+      attachments,
+      charge_affaire: effectiveCA || null,
+      assigned_to: form.assigned_to || null,
+      scheduled_date: form.scheduled_date || null,
+      // L'heure n'a de sens qu'avec une date ; sans heure = « journée ».
+      scheduled_time: form.scheduled_date && form.scheduled_time ? form.scheduled_time : null,
+      duration_minutes: Number(form.duration_minutes) || DEFAULT_DURATION,
+      received_date: form.received_date || null,
+      // La validation du devis ne concerne que les commandes de portes.
+      devis_valide: form.category === 'commande_portes' ? form.devis_valide : false,
+      devis_valide_date: form.category === 'commande_portes' && form.devis_valide
+        ? form.devis_valide_date
+        : null,
+      reference: form.reference || null,
+      bt_number: form.bt_number || null,
+      // Tâches à ajouter au corps d'état Menuiserie
+      _customTypesToPersist: newTaskTypes,
+      _customCAToPersist: customCAMode && effectiveCA && !chargeAffaireOptions.includes(effectiveCA) ? effectiveCA : null,
+      // L'id pré-généré pour les uploads dans Storage. handleCreate l'utilisera.
+      _preGeneratedId: formOrderId,
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium mb-1">Client *</label>
+          <input
+            type="text"
+            value={form.client_name}
+            onChange={(e) => set('client_name', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            placeholder="Nom du client"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Téléphone</label>
+          <input
+            type="tel"
+            value={form.client_phone}
+            onChange={(e) => set('client_phone', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            placeholder="06 12 34 56 78"
+          />
+        </div>
+      </div>
+
+      <label className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border cursor-pointer ${
+        form.is_urgent ? 'bg-red-50 border-red-300' : 'bg-white border-gray-300 hover:bg-gray-50'
+      }`}>
+        <input
+          type="checkbox"
+          checked={form.is_urgent}
+          onChange={(e) => set('is_urgent', e.target.checked)}
+          className="h-4 w-4 text-red-600 border-gray-300 rounded"
+        />
+        <AlertTriangle className={`h-4 w-4 ${form.is_urgent ? 'text-red-600' : 'text-gray-400'}`} />
+        <span className={`text-sm font-medium ${form.is_urgent ? 'text-red-700' : 'text-gray-700'}`}>
+          Chantier urgent — remonte en rouge tout en haut de la liste
+        </span>
+      </label>
+
+      <div>
+        <label className="block text-sm font-medium mb-1">Adresse du chantier</label>
+        <AddressAutocomplete
+          value={form.address}
+          onChange={(text) => set('address', text)}
+          onSelect={(hit) => setForm((f) => ({ ...f, address: hit.label, ...geocodePatch(hit, hit.label) }))}
+          geo={form}
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-1">Description</label>
+        <textarea
+          value={form.description}
+          onChange={(e) => set('description', e.target.value)}
+          rows={3}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          placeholder="Détail de l'intervention demandée"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium mb-1">Menuisier assigné</label>
+          <select
+            value={form.assigned_to}
+            onChange={(e) => set('assigned_to', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          >
+            <option value="">— Non assigné —</option>
+            {menuisiers.map((m) => (
+              <option key={m.id} value={m.id}>{m.Name || m.id}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Date prévue</label>
+          <input
+            type="date"
+            value={form.scheduled_date || ''}
+            onChange={(e) => set('scheduled_date', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium mb-1">Heure</label>
+            <input
+              type="time"
+              step="900"
+              value={form.scheduled_time || ''}
+              onChange={(e) => set('scheduled_time', e.target.value)}
+              disabled={!form.scheduled_date}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg disabled:bg-gray-50 disabled:text-gray-400"
+              title={form.scheduled_date ? '' : "Choisis d'abord une date"}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Durée</label>
+            <select
+              value={form.duration_minutes}
+              onChange={(e) => set('duration_minutes', Number(e.target.value))}
+              disabled={!form.scheduled_date}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-white disabled:bg-gray-50 disabled:text-gray-400"
+            >
+              {DURATION_OPTIONS.map((d) => <option key={d} value={d}>{durationLabel(d)}</option>)}
+            </select>
+          </div>
+          <p className="col-span-2 text-xs text-gray-500 -mt-1">Sans heure, le rendez-vous est « journée entière ».</p>
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Date de réception du bon</label>
+          <input
+            type="date"
+            value={form.received_date || ''}
+            onChange={(e) => set('received_date', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          />
+          <p className="text-xs text-gray-500 mt-1">Sert au tri : le plus ancien reçu passe en premier.</p>
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <label className="block text-sm font-medium">Chargé(e) d'affaire</label>
+          {caChoices.length > 0 && (
+            <label className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={customCAMode}
+                onChange={(e) => {
+                  setCustomCAMode(e.target.checked);
+                  if (!e.target.checked) setCustomCA('');
+                }}
+                className="h-3.5 w-3.5"
+              />
+              Nouveau chargé d'affaire
+            </label>
+          )}
+        </div>
+        {customCAMode || caChoices.length === 0 ? (
+          <>
+            <input
+              type="text"
+              value={customCAMode ? customCA : form.charge_affaire}
+              onChange={(e) => (customCAMode ? setCustomCA(e.target.value) : set('charge_affaire', e.target.value))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+              placeholder="Prénom Nom"
+            />
+            {customCAMode && (
+              <p className="text-xs text-blue-600 mt-1">
+                Ce chargé d'affaire sera ajouté à la liste pour les prochains bons.
+              </p>
+            )}
+          </>
+        ) : (
+          <select
+            value={form.charge_affaire}
+            onChange={(e) => set('charge_affaire', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          >
+            <option value="">— Non renseigné —</option>
+            {caChoices.map((name) => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium mb-1">N° de BT</label>
+          <input
+            type="text"
+            value={form.bt_number}
+            onChange={(e) => set('bt_number', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            placeholder="Référence demande du bon de commande"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Référence (optionnel)</label>
+          <input
+            type="text"
+            value={form.reference}
+            onChange={(e) => set('reference', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            placeholder="Ex: BM-2026-001"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Sous-section</label>
+          <select
+            value={form.category}
+            onChange={(e) => set('category', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          >
+            {Object.entries(MENUISERIE_CATEGORIES).map(([v, l]) => (
+              <option key={v} value={v}>{l}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {form.category === 'commande_portes' && (
+        <div className={`px-3 py-2.5 rounded-lg border space-y-2 ${
+          form.devis_valide ? 'bg-teal-50 border-teal-300' : 'bg-white border-gray-300'
+        }`}>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.devis_valide}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                setForm((f) => ({
+                  ...f,
+                  devis_valide: checked,
+                  // Pré-remplit la date à aujourd'hui quand on coche
+                  devis_valide_date: checked
+                    ? (f.devis_valide_date || new Date().toISOString().slice(0, 10))
+                    : '',
+                }));
+              }}
+              className="h-4 w-4 text-teal-600 border-gray-300 rounded"
+            />
+            <BadgeCheck className={`h-4 w-4 ${form.devis_valide ? 'text-teal-600' : 'text-gray-400'}`} />
+            <span className={`text-sm font-medium ${form.devis_valide ? 'text-teal-700' : 'text-gray-700'}`}>
+              Devis validé — le chantier passe dans « Devis validés » (production)
+            </span>
+          </label>
+          {form.devis_valide && (
+            <div className="pl-6">
+              <label className="block text-xs font-medium text-teal-700 mb-1">Date de validation du devis *</label>
+              <input
+                type="date"
+                value={form.devis_valide_date || ''}
+                onChange={(e) => set('devis_valide_date', e.target.value)}
+                className="px-3 py-2 border border-teal-300 rounded-lg bg-white"
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      <div>
+        <label className="block text-sm font-medium mb-2">Interventions *</label>
+        <InterventionLinesEditor
+          lines={interventionLines}
+          onChange={setInterventionLines}
+          interventionOptions={interventionOptions}
+        />
+        <p className="text-xs text-gray-500 mt-2">
+          Ajoute toutes les interventions à effectuer à cette adresse. Le menuisier
+          renseignera les cotes, photos et statut pour chacune indépendamment.
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-2">Pièces jointes</label>
+        <AttachmentsEditor
+          attachments={attachments}
+          onChange={setAttachments}
+          orderId={formOrderId}
+        />
+      </div>
+
+      <div className="flex justify-end gap-3 pt-2">
+        <button onClick={onCancel} className="px-4 py-2 text-gray-600 rounded-lg hover:bg-gray-100">
+          Annuler
+        </button>
+        <button onClick={submit} disabled={submitting} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+          {submitting ? 'Localisation…' : order ? 'Enregistrer' : 'Créer le bon'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// Formulaire « Facturation » : la secrétaire renseigne le prix HT de chaque
+// intervention, le statut (à facturer / devis envoyé / facturé), le n° de
+// devis/facture et la date. Le total se calcule tout seul.
+const BillingForm = ({ order, onSaved, onCancel }) => {
+  const interventions = orderInterventions(order);
+  const [prices, setPrices] = useState(() =>
+    Object.fromEntries(interventions.map((iv) => [iv.id, iv.price_ht ?? '']))
+  );
+  const [billingStatus, setBillingStatus] = useState(() => {
+    const s = order.billing_status || 'devis_a_faire';
+    if (s === 'devis_envoye') return 'devis_fait'; // ancienne valeur (avant 0008)
+    return BILLING_STATUS[s] ? s : 'devis_a_faire';
+  });
+  const [invoiceNumber, setInvoiceNumber] = useState(order.invoice_number || '');
+  const [billedDate, setBilledDate] = useState(order.billed_date || '');
+  const [saving, setSaving] = useState(false);
+
+  const total = interventions.reduce((sum, iv) => {
+    const p = Number(String(prices[iv.id]).replace(',', '.'));
+    return sum + (Number.isFinite(p) ? p : 0);
+  }, 0);
+
+  const save = async () => {
+    try {
+      setSaving(true);
+      // Réinjecte les prix dans les interventions (sans toucher au reste :
+      // cotes, photos, statut… restent intacts).
+      const updatedInterventions = interventions.map((iv) => {
+        const raw = String(prices[iv.id] ?? '').replace(',', '.').trim();
+        const p = raw === '' ? null : Number(raw);
+        const { _legacy, ...rest } = iv; // eslint-disable-line no-unused-vars
+        return { ...rest, price_ht: Number.isFinite(p) ? p : null };
+      });
+      const { error } = await supabase
+        .from('menuiserie_orders')
+        .update({
+          interventions: updatedInterventions,
+          billing_status: billingStatus,
+          invoice_number: invoiceNumber.trim() || null,
+          billed_date: billedDate || null,
+        })
+        .eq('id', order.id);
+      if (error) throw error;
+      onSaved();
+    } catch (e) {
+      console.error('Erreur sauvegarde facturation :', e);
+      alert('Erreur lors de la sauvegarde de la facturation.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {!isOrderBillable(order) && (
+        <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Ce bon n'est pas terminé : il apparaîtra automatiquement « Devis à faire »
+          quand toutes ses interventions seront terminées. Tu peux quand même
+          renseigner les prix dès maintenant.
+        </p>
+      )}
+      <div>
+        <label className="block text-sm font-medium mb-2">Prix HT par intervention</label>
+        {interventions.length === 0 ? (
+          <p className="text-sm text-gray-400 italic">Aucune intervention sur ce bon.</p>
+        ) : (
+          <div className="space-y-2">
+            {interventions.map((iv) => (
+              <div key={iv.id} className="flex items-center gap-3">
+                <div className="flex-1 min-w-0 text-sm">
+                  <span className="text-gray-800">{typeLabel(iv.type)}</span>{' '}
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] ${MENUISERIE_STATUS_STYLES[iv.status] || ''}`}>
+                    {statusLabel(iv.status)}
+                  </span>
+                </div>
+                <div className="relative w-32 flex-shrink-0">
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={prices[iv.id]}
+                    onChange={(e) => setPrices((p) => ({ ...p, [iv.id]: e.target.value }))}
+                    className="w-full pl-3 pr-7 py-2 border border-gray-300 rounded-lg text-right"
+                    placeholder="0,00"
+                  />
+                  <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm">€</span>
+                </div>
+              </div>
+            ))}
+            <div className="flex items-center justify-between pt-2 border-t text-sm">
+              <span className="font-medium text-gray-700">Total HT</span>
+              <span className="font-bold text-gray-900">{fmtEuro(total)}</span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-1">Étape devis / facturation</label>
+        <div className="grid grid-cols-2 gap-2">
+          {Object.entries(BILLING_STATUS).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setBillingStatus(value)}
+              className={`px-3 py-2 rounded-lg text-sm border ${
+                billingStatus === value
+                  ? `${BILLING_STATUS_STYLES[value]} border-transparent font-semibold ring-2 ring-offset-1 ring-blue-400`
+                  : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-gray-500 mt-1">
+          Parcours : Devis à faire → Devis fait → À facturer → En cours de facturation → Facturé.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium mb-1">N° devis / facture</label>
+          <input
+            type="text"
+            value={invoiceNumber}
+            onChange={(e) => setInvoiceNumber(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            placeholder="Ex: F-2026-042"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Date de facturation</label>
+          <input
+            type="date"
+            value={billedDate}
+            onChange={(e) => setBilledDate(e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          />
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-3 pt-2">
+        <button onClick={onCancel} className="px-4 py-2 text-gray-600 rounded-lg hover:bg-gray-100">
+          Annuler
+        </button>
+        <button
+          onClick={save}
+          disabled={saving}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+        >
+          {saving ? 'Enregistrement…' : 'Enregistrer'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// Formulaire « Relances » : historique des relances reçues pour ce bon
+// (date + note), avec ajout et suppression. Le nombre de relances pilote la
+// couleur du badge et la remontée du bon en haut de la liste.
+const RelancesForm = ({ order, onSaved, onCancel }) => {
+  const [relances, setRelances] = useState(() => orderRelances(order));
+  const [draft, setDraft] = useState(() => newRelance());
+  const [saving, setSaving] = useState(false);
+
+  const addDraft = () => {
+    if (!draft.date) {
+      alert('Renseigne la date de la relance.');
+      return;
+    }
+    setRelances((r) => [...r, { ...draft, note: draft.note.trim() }]);
+    setDraft(newRelance());
+  };
+
+  const removeRelance = (id) => setRelances((r) => r.filter((x) => x.id !== id));
+
+  const save = async () => {
+    try {
+      setSaving(true);
+      // Si une relance est en cours de saisie (note remplie) mais pas encore
+      // « Ajoutée », on l'inclut quand même pour éviter de la perdre.
+      const pending = draft.note.trim() ? [{ ...draft, note: draft.note.trim() }] : [];
+      const { error } = await supabase
+        .from('menuiserie_orders')
+        .update({ relances: [...relances, ...pending] })
+        .eq('id', order.id);
+      if (error) throw error;
+      onSaved();
+    } catch (e) {
+      console.error('Erreur sauvegarde relances :', e);
+      alert('Erreur lors de la sauvegarde des relances.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const sorted = [...relances].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+  return (
+    <div className="space-y-4">
+      {sorted.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-sm font-medium">Relances enregistrées</label>
+            <span className={`px-2 py-0.5 rounded-full text-xs ${relanceBadgeStyle(sorted.length)}`}>
+              {sorted.length} relance{sorted.length > 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {sorted.map((r, idx) => (
+              <div key={r.id} className="flex items-start gap-3 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                <span className={`mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold ${relanceBadgeStyle(idx + 1)}`}>
+                  #{idx + 1}
+                </span>
+                <div className="flex-1 min-w-0 text-sm">
+                  <p className="text-gray-800 font-medium">
+                    {r.date ? new Date(r.date).toLocaleDateString('fr-FR') : 'Date inconnue'}
+                  </p>
+                  {r.note && <p className="text-gray-600 whitespace-pre-wrap">{r.note}</p>}
+                </div>
+                <button
+                  onClick={() => removeRelance(r.id)}
+                  className="p-1 text-red-500 hover:bg-red-50 rounded"
+                  aria-label="Supprimer la relance"
+                >
+                  <Trash className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="border border-dashed border-gray-300 rounded-lg p-3 space-y-3">
+        <label className="block text-sm font-medium">Nouvelle relance</label>
+        <div className="flex gap-3">
+          <input
+            type="date"
+            value={draft.date}
+            onChange={(e) => setDraft((d) => ({ ...d, date: e.target.value }))}
+            className="px-3 py-2 border border-gray-300 rounded-lg"
+          />
+          <input
+            type="text"
+            value={draft.note}
+            onChange={(e) => setDraft((d) => ({ ...d, note: e.target.value }))}
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg"
+            placeholder="Qui a relancé, par quel moyen, quoi…"
+          />
+        </div>
+        <button
+          onClick={addDraft}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm"
+        >
+          <Plus className="h-4 w-4" /> Ajouter la relance
+        </button>
+      </div>
+
+      <div className="flex justify-end gap-3 pt-2">
+        <button onClick={onCancel} className="px-4 py-2 text-gray-600 rounded-lg hover:bg-gray-100">
+          Annuler
+        </button>
+        <button
+          onClick={save}
+          disabled={saving}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+        >
+          {saving ? 'Enregistrement…' : 'Enregistrer'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// Modal « Devis validé » : demande la date de validation (aujourd'hui par
+// défaut) avant de basculer la commande dans « Portes validées ». Permet
+// aussi de corriger la date ou d'annuler la validation.
+const DevisValideForm = ({ order, onSave, onCancel }) => {
+  const [date, setDate] = useState(
+    order.devis_valide_date || new Date().toISOString().slice(0, 10)
+  );
+
+  const validate = () => {
+    if (!date) {
+      alert('Renseigne la date de validation du devis.');
+      return;
+    }
+    onSave({ devis_valide: true, devis_valide_date: date });
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-600">
+        {order.devis_valide
+          ? 'Ce devis est validé. Tu peux corriger la date ou annuler la validation.'
+          : 'Le chantier passera dans « Devis validés » (prêt pour production).'}
+      </p>
+      <div>
+        <label className="block text-sm font-medium mb-1">Date de validation du devis *</label>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="px-3 py-2 border border-gray-300 rounded-lg"
+        />
+      </div>
+      <div className="flex items-center justify-between gap-3 pt-2">
+        {order.devis_valide ? (
+          <button
+            onClick={() => onSave({ devis_valide: false, devis_valide_date: null })}
+            className="px-4 py-2 text-red-600 rounded-lg hover:bg-red-50 text-sm"
+          >
+            Annuler la validation
+          </button>
+        ) : <span />}
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="px-4 py-2 text-gray-600 rounded-lg hover:bg-gray-100">
+            Fermer
+          </button>
+          <button
+            onClick={validate}
+            className="flex items-center gap-2 px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
+          >
+            <BadgeCheck className="h-4 w-4" />
+            {order.devis_valide ? 'Enregistrer la date' : 'Valider le devis'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Modal « Annuler le bon » : le bon n'est PAS supprimé — il passe dans
+// l'onglet « Terminés » avec une raison obligatoire et une date, pour
+// pouvoir justifier plus tard pourquoi on n'est pas intervenu.
+// Permet aussi de corriger la raison ou de rétablir le bon.
+const CancelOrderForm = ({ order, onSave, onCancel }) => {
+  const [reason, setReason] = useState(order.cancelled_reason || '');
+  const [date, setDate] = useState(
+    order.cancelled_date || new Date().toISOString().slice(0, 10)
+  );
+
+  const validate = () => {
+    if (!reason.trim()) {
+      alert("Renseigne la raison de l'annulation.");
+      return;
+    }
+    if (!date) {
+      alert("Renseigne la date de l'annulation.");
+      return;
+    }
+    onSave({ cancelled: true, cancelled_reason: reason.trim(), cancelled_date: date });
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-gray-600">
+        {order.cancelled
+          ? 'Ce bon est annulé. Tu peux corriger la raison, la date, ou le rétablir.'
+          : 'Le bon ne sera pas supprimé : il passera dans « Terminés » avec la raison ci-dessous.'}
+      </p>
+      <div>
+        <label className="block text-sm font-medium mb-1">Raison de l'annulation *</label>
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          rows={3}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          placeholder="Ex: client injoignable, travaux annulés par le bailleur, doublon avec le BT n°…"
+        />
+      </div>
+      <div>
+        <label className="block text-sm font-medium mb-1">Date de l'annulation *</label>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="px-3 py-2 border border-gray-300 rounded-lg"
+        />
+      </div>
+      <div className="flex items-center justify-between gap-3 pt-2">
+        {order.cancelled ? (
+          <button
+            onClick={() => onSave({ cancelled: false, cancelled_reason: null, cancelled_date: null })}
+            className="px-4 py-2 text-green-700 rounded-lg hover:bg-green-50 text-sm"
+          >
+            Rétablir le bon
+          </button>
+        ) : <span />}
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="px-4 py-2 text-gray-600 rounded-lg hover:bg-gray-100">
+            Fermer
+          </button>
+          <button
+            onClick={validate}
+            className="flex items-center gap-2 px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700"
+          >
+            <Ban className="h-4 w-4" />
+            {order.cancelled ? 'Enregistrer' : 'Annuler le bon'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+function MenuiserieManagement() {
+  const [orders, setOrders] = useState([]);
+  const [menuisiers, setMenuisiers] = useState([]);
+  const [interventionOptions, setInterventionOptions] = useState([]);
+  const [chargeAffaireOptions, setChargeAffaireOptions] = useState([]);
+  // On garde la référence au corps d'état Menuiserie pour pouvoir y persister
+  // une nouvelle tâche créée à la volée depuis le formulaire de bon.
+  const [menuiserieTrade, setMenuiserieTrade] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [modal, setModal] = useState({ type: null, data: null });
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [billingFilter, setBillingFilter] = useState('all');
+  // Sous-section active (onglet) : petites interventions / chantiers neufs / …
+  const [category, setCategory] = useState('petites_interventions');
+  // Rayon du modal « Bons proches à planifier »
+  const [nearbyRadius, setNearbyRadius] = useState(5);
+  // 'failed' : n'afficher que les bons dont l'adresse n'a pas pu être localisée
+  // (toutes sous-sections confondues), pour les corriger.
+  const [geoFilter, setGeoFilter] = useState('all');
+
+  // `silent` : rechargement en arrière-plan (Realtime), sans spinner.
+  const loadData = useCallback(async ({ silent = false } = {}) => {
+    try {
+      if (!silent) setIsLoading(true);
+      const [ordersRes, menuisiersRes, tradesRes, caRes] = await Promise.all([
+        supabase
+          .from('menuiserie_orders')
+          .select('*, assigned_profile:assigned_to(id, Name)')
+          .order('created_at', { ascending: false }),
+        supabase.from('profiles').select('id, Name, role').eq('role', 'menuisier'),
+        supabase.from('trades').select('*'),
+        supabase.from('charge_affaires').select('name').order('name', { ascending: true }),
+      ]);
+
+      if (ordersRes.error) throw ordersRes.error;
+      if (menuisiersRes.error) throw menuisiersRes.error;
+      if (tradesRes.error) throw tradesRes.error;
+      if (caRes.error) throw caRes.error;
+
+      setOrders(ordersRes.data || []);
+      setMenuisiers(menuisiersRes.data || []);
+      setChargeAffaireOptions((caRes.data || []).map((r) => r.name));
+
+      // Les types d'intervention proviennent des tâches du corps d'état « Menuiserie »
+      const trade = findMenuiserieTrade(tradesRes.data || []);
+      setMenuiserieTrade(trade);
+      setInterventionOptions(sortInterventionOptions(trade?.tasks || []));
+    } catch (error) {
+      console.error('Erreur chargement menuiserie:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Replanifications / modifications faites par les menuisiers : la liste
+  // admin se met à jour toute seule.
+  useOrdersRealtime({ onChange: () => loadData({ silent: true }) });
+
+  // Localisation automatique des adresses pas encore géocodées (bons créés
+  // avant la carte, ou géocodeur indisponible à l'enregistrement).
+  const geoProgress = useAutoGeocode(orders, { enabled: !isLoading, onDone: () => loadData({ silent: true }) });
+
+  // Persiste de nouvelles tâches dans le corps d'état Menuiserie pour qu'elles
+  // soient disponibles dans la liste déroulante des prochains bons.
+  const persistCustomTasksIfAny = async (customTasks) => {
+    const tasks = Array.isArray(customTasks) ? customTasks : (customTasks ? [customTasks] : []);
+    const toAdd = tasks.filter(Boolean);
+    if (toAdd.length === 0) return;
+    if (!menuiserieTrade) {
+      console.warn('Aucun corps d\'état Menuiserie trouvé — tâches custom non sauvées.');
+      return;
+    }
+    const existing = new Set(menuiserieTrade.tasks || []);
+    const additions = toAdd.filter((t) => !existing.has(t));
+    if (additions.length === 0) return;
+    try {
+      const updatedTrade = {
+        ...menuiserieTrade,
+        tasks: [...(menuiserieTrade.tasks || []), ...additions],
+        updated_at: new Date().toISOString(),
+      };
+      await DBService.store(STORES.TRADES, updatedTrade);
+    } catch (e) {
+      console.error('Erreur ajout tâches au corps d\'état:', e);
+    }
+  };
+
+  // Persiste un nouveau chargé d'affaire pour qu'il apparaisse dans la liste
+  // déroulante des prochains bons.
+  const persistCustomCAIfAny = async (customCA) => {
+    if (!customCA) return;
+    if (chargeAffaireOptions.includes(customCA)) return;
+    try {
+      const { error } = await supabase.from('charge_affaires').insert({ name: customCA });
+      if (error && error.code !== '23505') throw error; // 23505 = unique violation
+    } catch (e) {
+      console.error('Erreur ajout chargé d\'affaire :', e);
+    }
+  };
+
+  // Après enregistrement : si le bon a un rendez-vous et une position, on
+  // propose les bons proches encore à planifier (regroupement de la tournée).
+  const afterSave = (saved) => {
+    if (saved.scheduled_date && hasCoords(saved) && !saved.cancelled) {
+      const candidates = orders.filter((o) => o.id !== saved.id && isPlannable(o) && !o.scheduled_date);
+      if (ordersWithin(candidates, coordsOf(saved), 5).length > 0) {
+        setModal({ type: 'nearby', data: saved });
+        return;
+      }
+    }
+    setModal({ type: null });
+  };
+
+  const handleCreate = async (formData) => {
+    try {
+      const { _customTypesToPersist, _customCAToPersist, _preGeneratedId, ...orderFields } = formData;
+      const newOrder = {
+        ...orderFields,
+        // Important : on utilise l'id pré-généré au moment de l'ouverture du
+        // formulaire pour que les pièces jointes (déjà uploadées dans Storage
+        // sous ce préfixe) restent cohérentes avec l'id du bon.
+        id: _preGeneratedId || generateUUID(),
+        status: computeOrderStatus(orderFields.interventions),
+        measurements: [],
+        photos: [],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      await DBService.store(STORES.MENUISERIE, newOrder);
+      await persistCustomTasksIfAny(_customTypesToPersist);
+      await persistCustomCAIfAny(_customCAToPersist);
+      afterSave(newOrder);
+      loadData({ silent: true });
+    } catch (error) {
+      console.error('Erreur création bon:', error);
+      alert(`Erreur lors de la création du bon — ${describeDbError(error)}`);
+    }
+  };
+
+  const handleEdit = async (formData) => {
+    try {
+      // On repart de la ligne la plus fraîche (maintenue par le Realtime) et
+      // non de l'instantané pris à l'ouverture du formulaire : sinon on
+      // écraserait un replanning fait entre-temps par un menuisier.
+      const freshest = orders.find((o) => o.id === modal.data.id) || modal.data;
+      const { assigned_profile, ...rest } = freshest; // eslint-disable-line no-unused-vars
+      const { _customTypesToPersist, _customCAToPersist, _preGeneratedId, ...orderFields } = formData; // eslint-disable-line no-unused-vars
+      const updated = {
+        ...rest,
+        ...orderFields,
+        status: computeOrderStatus(orderFields.interventions),
+        updated_at: new Date().toISOString(),
+      };
+      await DBService.store(STORES.MENUISERIE, updated);
+      await persistCustomTasksIfAny(_customTypesToPersist);
+      await persistCustomCAIfAny(_customCAToPersist);
+      afterSave(updated);
+      loadData({ silent: true });
+    } catch (error) {
+      console.error('Erreur modification bon:', error);
+      alert(`Erreur lors de la modification du bon — ${describeDbError(error)}`);
+    }
+  };
+
+  // Validation / annulation du devis d'une commande de portes, avec la date
+  // choisie dans le modal DevisValideForm.
+  const saveDevisValide = async (order, patch) => {
+    try {
+      const { error } = await supabase
+        .from('menuiserie_orders')
+        .update(patch)
+        .eq('id', order.id);
+      if (error) throw error;
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, ...patch } : o)));
+      setModal({ type: null });
+    } catch (error) {
+      console.error('Erreur validation devis:', error);
+      alert(`Erreur lors de la validation du devis — ${describeDbError(error)}`);
+    }
+  };
+
+  // Planification (date / heure / durée / menuisier) depuis le modal
+  // ScheduleModal : écriture partielle, puis mise à jour locale.
+  const saveSchedule = async (order, patch) => {
+    try {
+      const { error } = await supabase
+        .from('menuiserie_orders')
+        .update(patch)
+        .eq('id', order.id);
+      if (error) throw error;
+      const assignedProfile = patch.assigned_to !== undefined
+        ? (menuisiers.find((m) => m.id === patch.assigned_to) || null)
+        : order.assigned_profile;
+      setOrders((prev) => prev.map((o) => (
+        o.id === order.id
+          ? { ...o, ...patch, assigned_profile: assignedProfile, planning_updated_at: new Date().toISOString() }
+          : o
+      )));
+      // Depuis « Bons proches à planifier » : on y revient pour enchaîner.
+      setModal(modal.returnTo || { type: null });
+    } catch (error) {
+      console.error('Erreur planification:', error);
+      alert(`Erreur lors de la planification — ${describeDbError(error)}`);
+    }
+  };
+
+  // Annulation / rétablissement d'un bon (jamais supprimé), avec la raison
+  // saisie dans le modal CancelOrderForm.
+  const saveCancelled = async (order, patch) => {
+    try {
+      const { error } = await supabase
+        .from('menuiserie_orders')
+        .update(patch)
+        .eq('id', order.id);
+      if (error) throw error;
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, ...patch } : o)));
+      setModal({ type: null });
+    } catch (error) {
+      console.error('Erreur annulation bon:', error);
+      alert(`Erreur lors de l'annulation du bon — ${describeDbError(error)}`);
+    }
+  };
+
+  // Bascule rapide du marquage « urgent » depuis la liste.
+  const toggleUrgent = async (order) => {
+    try {
+      const next = !order.is_urgent;
+      const { error } = await supabase
+        .from('menuiserie_orders')
+        .update({ is_urgent: next })
+        .eq('id', order.id);
+      if (error) throw error;
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, is_urgent: next } : o)));
+    } catch (error) {
+      console.error('Erreur marquage urgent:', error);
+      alert(`Erreur lors du marquage urgent — ${describeDbError(error)}`);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Supprimer définitivement ce bon de menuiserie ?')) return;
+    try {
+      await DBService.delete(STORES.MENUISERIE, id);
+      loadData();
+    } catch (error) {
+      console.error('Erreur suppression bon:', error);
+      alert("Erreur lors de la suppression du bon.");
+    }
+  };
+
+  // Bons de l'onglet actif : tout le reste (stats, filtres, export) travaille
+  // sur cette liste. Le découpage (terminés à part, portes validées ou en
+  // attente de devis) est partagé avec l'interface menuisier.
+  const failedGeo = orders.filter((o) => geocodingFailed(o) && !o.cancelled);
+  const categoryOrders = geoFilter === 'failed'
+    ? failedGeo
+    : orders.filter((o) => orderMatchesTab(o, category));
+
+  const filtered = categoryOrders.filter((o) => {
+    const term = search.toLowerCase();
+    const ivs = orderInterventions(o);
+    const matchesSearch =
+      !term ||
+      (o.client_name || '').toLowerCase().includes(term) ||
+      (o.address || '').toLowerCase().includes(term) ||
+      (o.reference || '').toLowerCase().includes(term) ||
+      (o.bt_number || '').toLowerCase().includes(term);
+    const aggStatus = computeOrderStatus(ivs);
+    const matchesStatus = statusFilter === 'all' || aggStatus === statusFilter;
+    // Le statut de facturation « effectif » : un bon non terminé n'est pas
+    // « à facturer » (c'est une consigne pour la secrétaire, pas un défaut).
+    const effBilling = effectiveBillingStatus(o);
+    const matchesBilling =
+      billingFilter === 'all' ||
+      (billingFilter === 'relances'
+        ? orderRelances(o).length > 0
+        : billingFilter === 'pending'
+          ? effBilling !== null && effBilling !== 'facture'
+          : effBilling === billingFilter);
+    return matchesSearch && matchesStatus && matchesBilling;
+  });
+
+  // Tri partagé avec l'interface menuisier (cf. compareOrders) :
+  // urgents > relances > date de réception > date de création.
+  // Dans « Terminé et Facturé », on trie d'abord par mois (le plus récent en
+  // haut) pour permettre le groupement mensuel à l'affichage.
+  const sortedOrders = [...filtered].sort((a, b) => {
+    if (category === 'termines_factures') {
+      const ma = orderFactureMonth(a);
+      const mb = orderFactureMonth(b);
+      if (ma !== mb) return mb.localeCompare(ma);
+    }
+    return compareOrders(a, b);
+  });
+
+  const stats = categoryOrders.reduce(
+    (acc, o) => {
+      const s = computeOrderStatus(orderInterventions(o));
+      acc.total++;
+      if (s === 'todo') acc.todo++;
+      else if (s === 'in_progress') acc.inProgress++;
+      else if (s === 'completed') acc.completed++;
+      // « À traiter » = bons entrés dans le parcours devis/facture, pas encore facturés
+      const eff = effectiveBillingStatus(o);
+      if (eff !== null && eff !== 'facture') acc.aTraiter++;
+      if (orderRelances(o).length > 0) acc.relances++;
+      return acc;
+    },
+    { total: 0, todo: 0, inProgress: 0, completed: 0, aTraiter: 0, relances: 0 },
+  );
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h1 className="text-2xl lg:text-4xl font-bold text-gray-800">Menuiserie</h1>
+        <div className="flex items-center gap-2 flex-1 sm:flex-none justify-end">
+          <button
+            onClick={() => setModal({ type: 'map' })}
+            className="flex items-center justify-center gap-2 px-3 lg:px-4 py-2 bg-emerald-700 text-white rounded-lg hover:bg-emerald-800 text-sm lg:text-base"
+            title="Carte des bons de cet onglet"
+          >
+            <MapIcon className="h-5 w-5" /> Carte
+          </button>
+          <button
+            onClick={() => setModal({ type: 'export' })}
+            className="flex items-center justify-center gap-2 px-3 lg:px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-800 text-sm lg:text-base"
+          >
+            <Download className="h-5 w-5" /> Export
+          </button>
+          <button
+            onClick={() => setModal({ type: 'create' })}
+            className="flex items-center justify-center gap-2 px-3 lg:px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm lg:text-base"
+          >
+            <Plus className="h-5 w-5" /> Nouveau bon
+          </button>
+        </div>
+      </div>
+
+      <GeocodeProgress progress={geoProgress} />
+      {(failedGeo.length > 0 || geoFilter === 'failed') && (
+        <div className="flex items-center gap-2 flex-wrap text-xs">
+          <button
+            onClick={() => setGeoFilter((f) => (f === 'failed' ? 'all' : 'failed'))}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border font-medium ${
+              geoFilter === 'failed' ? 'bg-amber-600 text-white border-amber-600' : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+            }`}
+          >
+            <MapPinOff className="h-3.5 w-3.5" />
+            {failedGeo.length} adresse{failedGeo.length > 1 ? 's' : ''} introuvable{failedGeo.length > 1 ? 's' : ''}
+            {geoFilter === 'failed' ? ' — afficher tous les bons' : ' — voir la liste'}
+          </button>
+          {geoFilter === 'failed' && (
+            <span className="text-gray-600">
+              Ouvre le bon (crayon), retape l'adresse avec numéro, rue et ville, puis choisis une suggestion : il sera localisé aussitôt.
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Sous-sections */}
+      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
+        {MENUISERIE_TABS.map(([value, label]) => {
+          const count = orders.filter((o) => orderMatchesTab(o, value)).length;
+          const active = category === value;
+          const activeStyle = value === 'termines'
+            ? 'border-green-600 text-green-700 bg-green-50'
+            : value === 'termines_factures'
+              ? 'border-emerald-700 text-emerald-800 bg-emerald-50'
+              : value === 'portes_validees'
+                ? 'border-teal-600 text-teal-700 bg-teal-50'
+                : 'border-blue-600 text-blue-700 bg-blue-50';
+          const activeBadge = value === 'termines'
+            ? 'bg-green-100 text-green-700'
+            : value === 'termines_factures'
+              ? 'bg-emerald-100 text-emerald-800'
+              : value === 'portes_validees'
+                ? 'bg-teal-100 text-teal-700'
+                : 'bg-blue-100 text-blue-700';
+          return (
+            <button
+              key={value}
+              onClick={() => { setCategory(value); setGeoFilter('all'); }}
+              className={`px-2.5 py-2 lg:px-4 lg:py-2.5 text-xs lg:text-sm font-medium rounded-t-lg border-b-2 -mb-px whitespace-nowrap ${
+                active ? activeStyle : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              {label}
+              <span className={`ml-1.5 lg:ml-2 px-1.5 py-0.5 rounded-full text-xs ${
+                active ? activeBadge : 'bg-gray-100 text-gray-600'
+              }`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Stats — compactes sur mobile (3 colonnes), confortables sur grand écran */}
+      <div className="grid grid-cols-3 lg:grid-cols-6 gap-2 lg:gap-4">
+        <div className="bg-white p-2.5 lg:p-4 rounded-lg shadow"><p className="text-xs lg:text-sm text-gray-500 leading-tight">Total</p><p className="text-lg lg:text-2xl font-bold text-gray-800">{stats.total}</p></div>
+        <div className="bg-white p-2.5 lg:p-4 rounded-lg shadow"><p className="text-xs lg:text-sm text-gray-500 leading-tight">À faire</p><p className="text-lg lg:text-2xl font-bold text-gray-600">{stats.todo}</p></div>
+        <div className="bg-white p-2.5 lg:p-4 rounded-lg shadow"><p className="text-xs lg:text-sm text-gray-500 leading-tight">En cours</p><p className="text-lg lg:text-2xl font-bold text-blue-600">{stats.inProgress}</p></div>
+        <div className="bg-white p-2.5 lg:p-4 rounded-lg shadow"><p className="text-xs lg:text-sm text-gray-500 leading-tight">Terminés</p><p className="text-lg lg:text-2xl font-bold text-green-600">{stats.completed}</p></div>
+        <button
+          onClick={() => setBillingFilter((f) => (f === 'pending' ? 'all' : 'pending'))}
+          className={`bg-white p-2.5 lg:p-4 rounded-lg shadow text-left hover:ring-2 hover:ring-amber-300 ${billingFilter === 'pending' ? 'ring-2 ring-amber-400' : ''}`}
+        >
+          <p className="text-xs lg:text-sm text-gray-500 leading-tight">Devis / à facturer</p><p className="text-lg lg:text-2xl font-bold text-amber-600">{stats.aTraiter}</p>
+        </button>
+        <button
+          onClick={() => setBillingFilter((f) => (f === 'relances' ? 'all' : 'relances'))}
+          className={`bg-white p-2.5 lg:p-4 rounded-lg shadow text-left hover:ring-2 hover:ring-red-300 ${billingFilter === 'relances' ? 'ring-2 ring-red-400' : ''}`}
+        >
+          <p className="text-xs lg:text-sm text-gray-500 leading-tight">Avec relances</p><p className="text-lg lg:text-2xl font-bold text-red-600">{stats.relances}</p>
+        </button>
+      </div>
+
+      {/* Filtres */}
+      <div className="flex flex-wrap gap-3">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 h-5 w-5" />
+          <input
+            type="text"
+            placeholder="Rechercher client, adresse, référence…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="flex-1 sm:flex-none min-w-[30%] sm:min-w-0 px-2 lg:px-3 py-2 text-sm border border-gray-300 rounded-lg">
+          <option value="all">Tous les statuts</option>
+          {Object.entries(MENUISERIE_STATUS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+        <select value={billingFilter} onChange={(e) => setBillingFilter(e.target.value)} className="flex-1 sm:flex-none min-w-[30%] sm:min-w-0 px-2 lg:px-3 py-2 text-sm border border-gray-300 rounded-lg">
+          <option value="all">Toute facturation</option>
+          <option value="pending">À traiter (non facturé)</option>
+          {Object.entries(BILLING_STATUS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          <option value="relances">Avec relances</option>
+        </select>
+      </div>
+
+      {/* Liste */}
+      <div className="bg-white rounded-lg shadow divide-y">
+        {sortedOrders.length === 0 && (
+          <div className="p-8 text-center text-gray-500">Aucun bon ne correspond.</div>
+        )}
+        {(() => {
+        // Dans « Terminé et Facturé », on insère un en-tête à chaque changement
+        // de mois (liste déjà triée par mois décroissant).
+        let lastMonth = null;
+        return sortedOrders.map((order) => {
+          const ivs = orderInterventions(order);
+          const aggregatedStatus = computeOrderStatus(ivs);
+          const completedCount = ivs.filter((i) => i.status === 'completed').length;
+          const relances = orderRelances(order);
+          const totalHt = orderTotalHt(order);
+          const billing = effectiveBillingStatus(order);
+          const rowStyle = order.cancelled
+            ? 'border-l-4 border-gray-400 bg-gray-50'
+            : order.is_urgent
+              ? 'border-l-4 border-red-600 bg-red-50'
+              : relanceBorderStyle(relances.length);
+          // En-tête de mois (uniquement dans « Terminé et Facturé »)
+          let monthHeader = null;
+          if (category === 'termines_factures') {
+            const m = orderFactureMonth(order) || '';
+            if (m !== lastMonth) {
+              lastMonth = m;
+              const group = sortedOrders.filter((o) => (orderFactureMonth(o) || '') === m);
+              const total = group.reduce((s, o) => s + orderTotalHt(o), 0);
+              monthHeader = (
+                <div className="px-4 py-2 bg-emerald-50 flex items-center justify-between gap-2">
+                  <span className="text-sm font-bold text-emerald-800 capitalize">
+                    {m ? monthLabel(m) : 'Mois non déterminé'}
+                  </span>
+                  <span className="text-xs text-emerald-700">
+                    {group.length} bon{group.length > 1 ? 's' : ''}
+                    {total > 0 ? ` — ${fmtEuro(total)} HT` : ''}
+                  </span>
+                </div>
+              );
+            }
+          }
+          return (
+          <React.Fragment key={order.id}>
+          {monthHeader}
+          <div className={`p-3 lg:p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4 ${rowStyle}`}>
+            <div className="space-y-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                {order.cancelled && (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-gray-600 text-white">
+                    <Ban className="h-3 w-3" />
+                    Annulé{order.cancelled_date ? ` le ${new Date(order.cancelled_date).toLocaleDateString('fr-FR')}` : ''}
+                  </span>
+                )}
+                {!order.cancelled && order.is_urgent && (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold bg-red-600 text-white">
+                    <AlertTriangle className="h-3 w-3" /> URGENT
+                  </span>
+                )}
+                <span className="font-semibold text-gray-800">{order.client_name || 'Client non renseigné'}</span>
+                {order.bt_number && (
+                  <span className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded">BT {order.bt_number}</span>
+                )}
+                {(category === 'termines' || geoFilter === 'failed') && (
+                  <span className="text-xs bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full">
+                    {categoryLabel(orderCategory(order))}
+                  </span>
+                )}
+                {orderCategory(order) === 'commande_portes' && (
+                  order.devis_valide ? (
+                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-teal-100 text-teal-800">
+                      <BadgeCheck className="h-3 w-3" />
+                      Devis validé{order.devis_valide_date ? ` le ${new Date(order.devis_valide_date).toLocaleDateString('fr-FR')}` : ''}
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">
+                      En attente de validation
+                    </span>
+                  )
+                )}
+                {order.reference && <span className="text-xs text-gray-400">({order.reference})</span>}
+                <span className={`px-2 py-0.5 rounded-full text-xs ${MENUISERIE_STATUS_STYLES[aggregatedStatus] || ''}`}>
+                  {statusLabel(aggregatedStatus)}
+                </span>
+                {billing && (
+                  <span className={`px-2 py-0.5 rounded-full text-xs ${BILLING_STATUS_STYLES[billing]}`}>
+                    {billingLabel(billing)}
+                  </span>
+                )}
+                {relances.length > 0 && (
+                  <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${relanceBadgeStyle(relances.length)}`}>
+                    <Bell className="h-3 w-3" />
+                    {relances.length} relance{relances.length > 1 ? 's' : ''}
+                  </span>
+                )}
+                <CallBadge order={order} />
+                {ivs.length > 1 && (
+                  <span className="text-xs text-gray-500">
+                    {completedCount}/{ivs.length} interventions
+                  </span>
+                )}
+              </div>
+              <div className="text-sm text-blue-600 space-y-0.5">
+                {ivs.length === 0 ? (
+                  <span className="text-gray-400 italic">Aucune intervention</span>
+                ) : ivs.length === 1 ? (
+                  <span>{typeLabel(ivs[0].type)}</span>
+                ) : (
+                  <ul className="list-disc list-inside">
+                    {ivs.slice(0, 3).map((iv) => (
+                      <li key={iv.id}>
+                        {typeLabel(iv.type)}{' '}
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${MENUISERIE_STATUS_STYLES[iv.status] || ''}`}>
+                          {statusLabel(iv.status)}
+                        </span>
+                      </li>
+                    ))}
+                    {ivs.length > 3 && <li className="text-gray-400">+ {ivs.length - 3} autres…</li>}
+                  </ul>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-500">
+                {orderReceivedDate(order) && (
+                  <span className="flex items-center gap-1">
+                    <Inbox className="h-3.5 w-3.5" />
+                    Reçu le {new Date(orderReceivedDate(order)).toLocaleDateString('fr-FR')}
+                  </span>
+                )}
+                {order.address && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{order.address}</span>}
+                {order.address && !hasCoords(order) && (
+                  <span className="flex items-center gap-1 text-xs text-gray-400" title="Adresse non localisée : absente de la carte et de la proximité">
+                    <MapPinOff className="h-3.5 w-3.5" /> non localisée
+                  </span>
+                )}
+                <span className="flex items-center gap-1">
+                  <User className="h-3.5 w-3.5" />
+                  {order.assigned_profile?.Name || 'Non assigné'}
+                </span>
+                {order.charge_affaire && (
+                  <span className="text-xs">CA : {order.charge_affaire}</span>
+                )}
+                {order.scheduled_date && (
+                  <span className="flex items-center gap-1 font-medium text-gray-700">
+                    <Calendar className="h-3.5 w-3.5" />
+                    {scheduledLabel(order, { withDuration: false })}
+                  </span>
+                )}
+                {totalHt > 0 && (
+                  <span className="font-semibold text-gray-700">{fmtEuro(totalHt)} HT</span>
+                )}
+              </div>
+              {order.cancelled && order.cancelled_reason && (
+                <p className="text-xs text-gray-500 italic">
+                  Raison de l'annulation : {order.cancelled_reason}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-1 flex-shrink-0 self-end sm:self-auto">
+              {telHref(order.client_phone) && (
+                <CallButton
+                  order={order}
+                  byName="Admin"
+                  onLogged={(next) => setOrders((prev) => prev.map((x) => (x.id === order.id ? { ...x, call_log: next } : x)))}
+                  className="p-2 text-green-600 hover:bg-green-50 rounded-lg"
+                >
+                  <Phone className="h-4 w-4" />
+                </CallButton>
+              )}
+              {!order.cancelled && (
+                <button
+                  onClick={() => setModal({ type: 'schedule', data: order })}
+                  className={`p-2 rounded-lg ${order.scheduled_date ? 'text-indigo-600 hover:bg-indigo-50' : 'text-gray-400 hover:bg-gray-100 hover:text-indigo-600'}`}
+                  aria-label="Planifier"
+                  title={order.scheduled_date ? `Rendez-vous : ${scheduledLabel(order)} — modifier` : 'Planifier un rendez-vous'}
+                >
+                  <Clock className="h-4 w-4" />
+                </button>
+              )}
+              <button onClick={() => setModal({ type: 'detail', data: order })} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg" aria-label="Voir" title="Voir">
+                <Eye className="h-4 w-4" />
+              </button>
+              <button onClick={() => setModal({ type: 'edit', data: order })} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg" aria-label="Modifier" title="Modifier">
+                <Edit className="h-4 w-4" />
+              </button>
+              <RowActionsMenu
+                order={order}
+                actions={{
+                  billing: (o) => setModal({ type: 'billing', data: o }),
+                  relances: (o) => setModal({ type: 'relances', data: o }),
+                  toggleUrgent,
+                  devisValide: (o) => setModal({ type: 'devis_valide', data: o }),
+                  cancel: (o) => setModal({ type: 'cancel', data: o }),
+                  remove: (o) => handleDelete(o.id),
+                  callLogged: (o, next) => setOrders((prev) => prev.map((x) => (x.id === o.id ? { ...x, call_log: next } : x))),
+                }}
+              />
+            </div>
+          </div>
+          </React.Fragment>
+          );
+        });
+        })()}
+      </div>
+
+      {modal.type === 'create' && (
+        <Modal title={`Nouveau bon — ${category === 'termines' || category === 'termines_factures' ? 'Menuiserie' : tabLabel(category)}`} onClose={() => setModal({ type: null })}>
+          <OrderForm
+            defaultCategory={
+              category === 'portes_validees' ? 'commande_portes'
+                : MENUISERIE_CATEGORIES[category] ? category
+                  : 'petites_interventions'
+            }
+            defaultDevisValide={category === 'portes_validees'}
+            menuisiers={menuisiers}
+            interventionOptions={interventionOptions}
+            chargeAffaireOptions={chargeAffaireOptions}
+            onSubmit={handleCreate}
+            onCancel={() => setModal({ type: null })}
+          />
+        </Modal>
+      )}
+      {modal.type === 'edit' && (
+        <Modal title="Modifier le bon" onClose={() => setModal({ type: null })}>
+          <OrderForm
+            order={modal.data}
+            menuisiers={menuisiers}
+            interventionOptions={interventionOptions}
+            chargeAffaireOptions={chargeAffaireOptions}
+            onSubmit={handleEdit}
+            onCancel={() => setModal({ type: null })}
+          />
+        </Modal>
+      )}
+      {modal.type === 'schedule' && (
+        <ScheduleModal
+          order={modal.data}
+          orders={orders}
+          menuisiers={menuisiers}
+          defaults={modal.defaults || {}}
+          onSave={(patch) => saveSchedule(modal.data, patch)}
+          onClose={() => setModal(modal.returnTo || { type: null })}
+        />
+      )}
+      {modal.type === 'nearby' && (
+        <Modal title="Bons proches à planifier" onClose={() => setModal({ type: null })}>
+          <p className="text-sm text-gray-600 mb-3">
+            Autour de <strong>{modal.data.client_name || 'ce bon'}</strong> — RDV {scheduledLabel(modal.data)}.
+            Regroupe les interventions proches le même jour pour éviter les allers-retours.
+          </p>
+          <NearbyOrders
+            origin={coordsOf(modal.data)}
+            orders={orders.filter((o) => o.id !== modal.data.id && isPlannable(o) && !o.scheduled_date)}
+            radiusKm={nearbyRadius}
+            onRadiusChange={setNearbyRadius}
+            onPick={(o) => setModal({ type: 'detail', data: o })}
+            renderAction={(o) => (
+              <button
+                onClick={() => setModal({
+                  type: 'schedule',
+                  data: o,
+                  returnTo: modal,
+                  defaults: {
+                    date: modal.data.scheduled_date,
+                    time: modal.data.scheduled_time
+                      ? addMinutesToTime(hhmm(modal.data.scheduled_time), modal.data.duration_minutes || DEFAULT_DURATION)
+                      : '09:00',
+                    assignee: modal.data.assigned_to || '',
+                    duration: o.duration_minutes || DEFAULT_DURATION,
+                  },
+                })}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 flex-shrink-0"
+              >
+                <Clock className="h-3.5 w-3.5" /> Planifier
+              </button>
+            )}
+            emptyLabel="Plus aucun bon à planifier dans ce rayon."
+          />
+          <div className="flex justify-end pt-3">
+            <button onClick={() => setModal({ type: null })} className="px-4 py-2 text-gray-600 rounded-lg hover:bg-gray-100">
+              Terminer
+            </button>
+          </div>
+        </Modal>
+      )}
+      {modal.type === 'map' && (
+        <Modal title={`Carte — ${tabLabel(category)}`} onClose={() => setModal({ type: null })} size="xl">
+          <GeocodeBackfill orders={orders} onDone={() => loadData({ silent: true })} />
+          <div className="flex flex-col lg:flex-row gap-4 items-start">
+            <div className="flex-1 min-w-0 w-full">
+              <Suspense fallback={<div className="h-[70vh] flex items-center justify-center"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" /></div>}>
+                <OrdersMap
+                  orders={categoryOrders}
+                  fit
+                  selectedId={modal.selectedId || null}
+                  onSelect={(o) => setModal((m) => ({ ...m, selectedId: o.id }))}
+                  className="h-[70vh]"
+                />
+              </Suspense>
+            </div>
+            {modal.selectedId && orders.find((o) => o.id === modal.selectedId) && (
+              <OrderSidePanel
+                order={orders.find((o) => o.id === modal.selectedId)}
+                heightClass="max-h-[70vh]"
+                onClose={() => setModal((m) => ({ ...m, selectedId: null }))}
+                actions={(
+                  <>
+                    <button
+                      onClick={() => setModal({ type: 'edit', data: orders.find((o) => o.id === modal.selectedId) })}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700"
+                    >
+                      <Edit className="h-3.5 w-3.5" /> Modifier
+                    </button>
+                    <button
+                      onClick={() => setModal({ type: 'schedule', data: orders.find((o) => o.id === modal.selectedId), returnTo: modal })}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700"
+                    >
+                      <Clock className="h-3.5 w-3.5" /> Planifier
+                    </button>
+                  </>
+                )}
+              />
+            )}
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            Rouge = urgent · orange = relancé · bleu = normal · gris = clos.
+            {' '}{categoryOrders.filter((o) => o.address && !hasCoords(o)).length} bon(s) de cet onglet sans position.
+          </p>
+        </Modal>
+      )}
+      {modal.type === 'cancel' && (
+        <Modal title={`Annulation — ${modal.data.client_name || 'bon'}`} onClose={() => setModal({ type: null })}>
+          <CancelOrderForm
+            order={modal.data}
+            onSave={(patch) => saveCancelled(modal.data, patch)}
+            onCancel={() => setModal({ type: null })}
+          />
+        </Modal>
+      )}
+      {modal.type === 'devis_valide' && (
+        <Modal title={`Devis — ${modal.data.client_name || 'chantier neuf'}`} onClose={() => setModal({ type: null })}>
+          <DevisValideForm
+            order={modal.data}
+            onSave={(patch) => saveDevisValide(modal.data, patch)}
+            onCancel={() => setModal({ type: null })}
+          />
+        </Modal>
+      )}
+      {modal.type === 'billing' && (
+        <Modal title={`Facturation — ${modal.data.client_name || 'bon'}`} onClose={() => setModal({ type: null })}>
+          <BillingForm
+            order={modal.data}
+            onSaved={() => { setModal({ type: null }); loadData(); }}
+            onCancel={() => setModal({ type: null })}
+          />
+        </Modal>
+      )}
+      {modal.type === 'relances' && (
+        <Modal title={`Relances — ${modal.data.client_name || 'bon'}`} onClose={() => setModal({ type: null })}>
+          <RelancesForm
+            order={modal.data}
+            onSaved={() => { setModal({ type: null }); loadData(); }}
+            onCancel={() => setModal({ type: null })}
+          />
+        </Modal>
+      )}
+      {modal.type === 'detail' && (
+        <Modal title={modal.data.client_name || 'Détail du bon'} onClose={() => setModal({ type: null })} wide>
+          <OrderDetail order={modal.data} />
+        </Modal>
+      )}
+      {modal.type === 'export' && (
+        <Modal title={`Export mensuel — ${tabLabel(category)}`} onClose={() => setModal({ type: null })}>
+          <ExportForm orders={categoryOrders} onClose={() => setModal({ type: null })} />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// Formulaire d'export mensuel : choix du mois, filtre par statut,
+// puis CSV (Excel) ou PDF. Une ligne par intervention, groupée par adresse.
+const ExportForm = ({ orders, onClose }) => {
+  const now = new Date();
+  const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const [month, setMonth] = useState(defaultMonth);
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  // Statuts inclus dans l'export — tous cochés par défaut.
+  const [statusChecked, setStatusChecked] = useState({
+    todo: true,
+    in_progress: true,
+    completed: true,
+  });
+
+  const selectedStatuses = Object.entries(statusChecked)
+    .filter(([, on]) => on)
+    .map(([k]) => k);
+
+  const toggleStatus = (key) =>
+    setStatusChecked((s) => ({ ...s, [key]: !s[key] }));
+
+  const nothingChecked = selectedStatuses.length === 0;
+
+  const runCsv = () => {
+    try {
+      const n = exportMonthCsv(orders, month, selectedStatuses);
+      setFeedback(n === 0
+        ? `Aucune intervention sur ${monthLabel(month)} avec ces critères — fichier vide généré.`
+        : `${n} intervention${n > 1 ? 's' : ''} exportée${n > 1 ? 's' : ''} (CSV téléchargé).`);
+    } catch (e) {
+      console.error('Erreur export CSV :', e);
+      alert("Erreur lors de l'export CSV.");
+    }
+  };
+
+  const runPdf = async () => {
+    try {
+      setBusy(true);
+      const n = await exportMonthPdf(orders, month, selectedStatuses);
+      setFeedback(n === 0
+        ? `Aucune intervention sur ${monthLabel(month)} avec ces critères — PDF vide généré.`
+        : `${n} intervention${n > 1 ? 's' : ''} exportée${n > 1 ? 's' : ''} (PDF ouvert).`);
+    } catch (e) {
+      console.error('Erreur export PDF :', e);
+      alert("Erreur lors de l'export PDF.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium mb-1">Mois à exporter</label>
+        <input
+          type="month"
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+        />
+        <p className="text-xs text-gray-500 mt-1">
+          Une ligne par intervention, groupée par adresse. La date de référence est
+          la date de réalisation si l'intervention est terminée, sinon la date prévue du bon.
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-2">Statuts à inclure</label>
+        <div className="flex flex-wrap gap-4">
+          {[
+            ['todo', 'À faire'],
+            ['in_progress', 'En cours'],
+            ['completed', 'Terminé'],
+          ].map(([key, label]) => (
+            <label key={key} className="flex items-center gap-2 text-sm cursor-pointer">
+              <input
+                type="checkbox"
+                checked={statusChecked[key]}
+                onChange={() => toggleStatus(key)}
+                className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+              />
+              <span className={`px-2 py-0.5 rounded-full text-xs ${MENUISERIE_STATUS_STYLES[key] || ''}`}>
+                {label}
+              </span>
+            </label>
+          ))}
+        </div>
+        {nothingChecked && (
+          <p className="text-xs text-amber-600 mt-1">Coche au moins un statut.</p>
+        )}
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-3">
+        <button
+          onClick={runCsv}
+          disabled={busy || !month || nothingChecked}
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-green-700 text-white rounded-lg hover:bg-green-800 disabled:opacity-50"
+        >
+          <Download className="h-4 w-4" /> Excel / CSV
+        </button>
+        <button
+          onClick={runPdf}
+          disabled={busy || !month || nothingChecked}
+          className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-900 disabled:opacity-50"
+        >
+          <FileText className="h-4 w-4" /> {busy ? 'Génération…' : 'PDF récapitulatif'}
+        </button>
+      </div>
+
+      {feedback && <p className="text-sm text-blue-700">{feedback}</p>}
+
+      <div className="flex justify-end pt-1">
+        <button onClick={onClose} className="px-4 py-2 text-gray-600 rounded-lg hover:bg-gray-100">
+          Fermer
+        </button>
+      </div>
+    </div>
+  );
+};
+
+export default MenuiserieManagement;
