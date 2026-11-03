@@ -248,7 +248,7 @@ export const smsHref = (phone) => {
 
 // Plusieurs numéros par bon : client_phone (+ anciens bons où plusieurs
 // numéros ont été tapés à la suite), client_phone2, client_phone3.
-const PHONE_RE = /(?:\+33\s?|0)[1-9](?:[\s.\-]?\d{2}){4}/g;
+const PHONE_RE = /(?:\+33\s?|0)[1-9](?:[\s.-]?\d{2}){4}/g;
 export const extractPhones = (text) => (String(text || '').match(PHONE_RE) || []).map((s) => s.trim());
 // [{ raw, href: 'tel:…', sms: 'sms:…' }] dédoublonnés, dans l'ordre
 export const orderPhones = (order) => {
