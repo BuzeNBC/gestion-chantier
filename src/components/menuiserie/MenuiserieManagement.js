@@ -34,7 +34,7 @@ import {
   MENUISERIE_CATEGORIES, orderCategory, categoryLabel, compareOrders, orderReceivedDate,
   sortInterventionOptions, MENUISERIE_TABS, orderMatchesTab, orderFactureMonth,
   relanceBadgeStyle, relanceBorderStyle, orderRelances, newRelance,
-  orderTotalHt, fmtEuro, telHref, directionsUrls, orderPhones, extractPhones,
+  orderTotalHt, fmtEuro, directionsUrls, orderPhones, extractPhones,
 } from '../../services/menuiserieService';
 import { exportMonthCsv, exportMonthPdf, monthLabel } from '../../services/menuiserieExport';
 import InterventionLinesEditor from './InterventionLinesEditor';
