@@ -51,7 +51,14 @@ export default function PlanningPage({ canEdit = false, embedded = false, showDe
   const [filter, setFilter] = useState(() => {
     try { return localStorage.getItem(FILTER_KEY) || 'all'; } catch { return 'all'; }
   });
-  const [showDone, setShowDone] = useState(false);
+  // Les RDV terminés restent affichés (vue des réalisations de la semaine,
+  // utile pour facturer) ; décochable, mémorisé.
+  const [showDone, setShowDone] = useState(() => {
+    try { return localStorage.getItem('planning.showDone') !== '0'; } catch { return true; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('planning.showDone', showDone ? '1' : '0'); } catch { /* stockage indisponible */ }
+  }, [showDone]);
   const [schedule, setSchedule] = useState(null);   // { order, defaults }
   const [detailOrder, setDetailOrder] = useState(null);
   // Grand écran : bon sélectionné, affiché dans le volet latéral
@@ -217,7 +224,7 @@ export default function PlanningPage({ canEdit = false, embedded = false, showDe
         {chip('unassigned', 'Non assignés', colorOf(null))}
         <label className="ml-auto flex items-center gap-1.5 text-sm text-gray-600 whitespace-nowrap cursor-pointer">
           <input type="checkbox" checked={showDone} onChange={(e) => setShowDone(e.target.checked)} className="h-4 w-4 rounded border-gray-300" />
-          Terminés
+          Afficher les terminés
         </label>
       </div>
 
@@ -294,7 +301,7 @@ export default function PlanningPage({ canEdit = false, embedded = false, showDe
 
       {/* Légende */}
       <p className="text-xs text-gray-500">
-        Bordure rouge = urgent · pointillés orange = chevauchement avec un autre RDV du même menuisier ·
+        Bordure rouge = urgent · ✓ vert = terminé · pointillés orange = chevauchement avec un autre RDV du même menuisier ·
         durée par défaut {durationLabel(DEFAULT_DURATION)}.
       </p>
 

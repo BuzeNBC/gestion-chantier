@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, useLayoutEffect, lazy, Suspense } from 'react';
 import {
   ArrowLeft, MapPin, Phone, User, Ruler, Camera, CheckCircle,
   Clock, Save, Trash2, ChevronRight, LogOut, FileText, X, Plus, Search,
@@ -220,6 +220,21 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
     setScheduleOpen(false);
   };
 
+  // Position de défilement de la liste : mémorisée quand on ouvre un bon,
+  // restaurée quand on revient (sinon la liste repartait tout en haut).
+  const listScrollY = useRef(0);
+  const openOrder = (id) => {
+    if (!selectedOrderId) listScrollY.current = window.scrollY;
+    setSelectedOrderId(id);
+  };
+  useLayoutEffect(() => {
+    if (selectedOrderId) {
+      window.scrollTo(0, 0);
+    } else if (listScrollY.current) {
+      window.scrollTo(0, listScrollY.current);
+    }
+  }, [selectedOrderId]);
+
   // Planification depuis le modal horaire : écriture partielle (le trigger
   // SQL trace qui a replanifié), puis mise à jour locale.
   const saveSchedule = async (patch) => {
@@ -402,8 +417,8 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
               <PlanningPage
                 canEdit={!embedded}
                 embedded
-                onOpenOrder={(o) => setSelectedOrderId(o.id)}
-                onEditIntervention={(o, iv) => { setSelectedOrderId(o.id); openIntervention(iv); }}
+                onOpenOrder={(o) => openOrder(o.id)}
+                onEditIntervention={(o, iv) => { openOrder(o.id); openIntervention(iv); }}
               />
             </Suspense>
           ) : view === 'map' ? (
@@ -453,7 +468,7 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
                   center={mapCenterEffective}
                   radiusKm={mapCenterEffective ? radiusKm : null}
                   userPosition={geo.position}
-                  onSelect={(o) => setSelectedOrderId(o.id)}
+                  onSelect={(o) => openOrder(o.id)}
                   onPickCenter={(ll) => setMapCenter(ll)}
                   fit={!mapCenterEffective}
                   className="h-[55vh]"
@@ -467,7 +482,7 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
                     orders={openOrders}
                     radiusKm={radiusKm}
                     onRadiusChange={setRadiusKm}
-                    onPick={(o) => setSelectedOrderId(o.id)}
+                    onPick={(o) => openOrder(o.id)}
                     emptyLabel="Aucun bon en cours dans ce rayon."
                   />
                 </div>
@@ -476,7 +491,7 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
                 <div className="text-xs text-gray-500">
                   <span className="inline-flex items-center gap-1"><MapPinOff className="h-3.5 w-3.5" /> Non localisés (absents de la carte) :</span>{' '}
                   {openOrders.filter((o) => o.address && !hasCoords(o)).map((o) => (
-                    <button key={o.id} onClick={() => setSelectedOrderId(o.id)} className="underline mr-2">
+                    <button key={o.id} onClick={() => openOrder(o.id)} className="underline mr-2">
                       {o.client_name || 'Client'}
                     </button>
                   ))}
@@ -610,7 +625,7 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
                 }`}
               >
               <button
-                onClick={() => setSelectedOrderId(order.id)}
+                onClick={() => openOrder(order.id)}
                 className="w-full p-4 flex items-center justify-between text-left"
               >
                 <div className="space-y-1">
@@ -1138,7 +1153,7 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
                   orders={openOrders.filter((o) => o.id !== selectedOrder.id)}
                   radiusKm={radiusKm}
                   onRadiusChange={setRadiusKm}
-                  onPick={(o) => setSelectedOrderId(o.id)}
+                  onPick={(o) => openOrder(o.id)}
                   emptyLabel="Aucun autre bon en cours dans ce rayon."
                 />
               </>

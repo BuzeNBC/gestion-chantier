@@ -1,8 +1,13 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import {
   typeLabel, statusLabel, orderInterventions, billingLabel, orderRelances,
-  effectiveBillingStatus, orderReceivedDate,
+  effectiveBillingStatus, orderReceivedDate, orderCategory, categoryLabel,
 } from './menuiserieService';
+
+// Suffixe de nom de fichier à partir du sous-titre (onglet / sous-section)
+const fileSlug = (s) => String(s || '')
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
 // =============================================================================
 // Export mensuel des interventions de menuiserie (CSV + PDF)
@@ -63,6 +68,7 @@ export const collectMonthRows = (orders, yearMonth, statuses = null) => {
           ? Number(iv.price_ht) : null,
         // Vide tant que le bon n'est pas terminé (pas encore facturable)
         billing: effectiveBillingStatus(order) ? billingLabel(effectiveBillingStatus(order)) : '',
+        category: categoryLabel(orderCategory(order)),
         relancesCount: orderRelances(order).length,
       });
     }
@@ -89,7 +95,7 @@ export const monthLabel = (yearMonth) => {
 // ============================================================== CSV ==========
 // Génère et télécharge un CSV. Séparateur ';' (convention Excel FR) et BOM
 // UTF-8 pour que les accents s'affichent correctement dans Excel.
-export const exportMonthCsv = (orders, yearMonth, statuses = null) => {
+export const exportMonthCsv = (orders, yearMonth, statuses = null, { subtitle = '' } = {}) => {
   const rows = collectMonthRows(orders, yearMonth, statuses);
   const esc = (v) => {
     const s = String(v ?? '');
@@ -99,7 +105,7 @@ export const exportMonthCsv = (orders, yearMonth, statuses = null) => {
     'Mois', 'Adresse', 'Client', 'Téléphone', 'N° de BT', 'Chargé d\'affaire',
     'Menuisier', 'Référence', 'Date', 'Date réception', 'Date prévue', 'Heure prévue', 'Durée (min)', 'Date réalisation',
     'Intervention', 'Statut', 'Prix HT (€)', 'Facturation', 'Relances',
-    'Nb cotes', 'Nb photos', 'Notes',
+    'Nb cotes', 'Nb photos', 'Notes', 'Sous-section',
   ];
   const lines = [header.join(';')];
   for (const r of rows) {
@@ -127,13 +133,14 @@ export const exportMonthCsv = (orders, yearMonth, statuses = null) => {
       r.measurementsCount,
       r.photosCount,
       esc(r.notes),
+      esc(r.category),
     ].join(';'));
   }
   const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `menuiserie-${yearMonth}.csv`;
+  link.download = `menuiserie-${yearMonth}${subtitle ? '-' + fileSlug(subtitle) : ''}.csv`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -144,7 +151,7 @@ export const exportMonthCsv = (orders, yearMonth, statuses = null) => {
 // ============================================================== PDF ==========
 // PDF récapitulatif du mois, groupé par adresse. Même charte que les autres
 // PDF du module (bleu foncé, A3 portrait, pied de page).
-export const exportMonthPdf = async (orders, yearMonth, statuses = null) => {
+export const exportMonthPdf = async (orders, yearMonth, statuses = null, { subtitle = '' } = {}) => {
   const rows = collectMonthRows(orders, yearMonth, statuses);
 
   const pdfDoc = await PDFDocument.create();
@@ -177,7 +184,7 @@ export const exportMonthPdf = async (orders, yearMonth, statuses = null) => {
       page.drawText('RÉCAPITULATIF MENUISERIE', {
         x: MARGIN, y: PAGE_HEIGHT - 38, size: 22, font: helveticaBold, color: headerTextColor,
       });
-      page.drawText(clean(monthLabel(yearMonth)), {
+      page.drawText(clean(monthLabel(yearMonth) + (subtitle ? ` — ${subtitle}` : '')), {
         x: MARGIN, y: PAGE_HEIGHT - 64, size: 14, font: helvetica, color: headerTextColor,
       });
       const count = `${rows.length} intervention${rows.length > 1 ? 's' : ''}`;
@@ -309,7 +316,7 @@ export const exportMonthPdf = async (orders, yearMonth, statuses = null) => {
   if (isMobile) {
     const link = document.createElement('a');
     link.href = url;
-    link.download = `recap-menuiserie-${yearMonth}.pdf`;
+    link.download = `recap-menuiserie-${yearMonth}${subtitle ? '-' + fileSlug(subtitle) : ''}.pdf`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

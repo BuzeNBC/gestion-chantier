@@ -5,7 +5,7 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import listPlugin from '@fullcalendar/list';
 import interactionPlugin from '@fullcalendar/interaction';
 import frLocale from '@fullcalendar/core/locales/fr';
-import { PLANNING_HOURS, HIDDEN_DAYS, initials, eventToPatch } from '../../services/planningService';
+import { PLANNING_HOURS, HIDDEN_DAYS, initials, eventToPatch, isPlannable } from '../../services/planningService';
 
 // Enveloppe FullCalendar du planning menuiserie. Chargé à la demande
 // (React.lazy) : ~90 ko gz qui ne pèsent que sur ceux qui ouvrent le planning.
@@ -27,7 +27,8 @@ const renderEvent = (arg, menuisiersById) => {
     <div className={`fc-ev ${isList ? 'fc-ev-list' : ''}`}>
       <div className="fc-ev-line">
         {arg.timeText && !isList && <span className="fc-ev-time">{arg.timeText}</span>}
-        {order.is_urgent && <span className="fc-ev-urgent" title="Urgent">!</span>}
+        {order.id && !isPlannable(order) && <span className="fc-ev-done" title="Terminé">✓</span>}
+        {order.is_urgent && isPlannable(order) && <span className="fc-ev-urgent" title="Urgent">!</span>}
         <span className="fc-ev-title">{order.client_name || arg.event.title}</span>
         {m && <span className="fc-ev-who" title={m.Name}>{initials(m.Name)}</span>}
       </div>

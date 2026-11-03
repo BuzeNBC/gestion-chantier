@@ -1081,6 +1081,16 @@ function MenuiserieManagement() {
   // 'failed' : n'afficher que les bons dont l'adresse n'a pas pu être localisée
   // (toutes sous-sections confondues), pour les corriger.
   const [geoFilter, setGeoFilter] = useState('all');
+  // Dans « Terminés » et « Terminé et Facturé » : séparer ce qui relève de la
+  // facturation petites interventions de celle des chantiers neufs (gérées
+  // différemment). Mémorisé.
+  const [closedCategory, setClosedCategory] = useState(() => {
+    try { return localStorage.getItem('menuiserie.closedCategory') || 'all'; } catch { return 'all'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('menuiserie.closedCategory', closedCategory); } catch { /* stockage indisponible */ }
+  }, [closedCategory]);
+  const isClosedTab = category === 'termines' || category === 'termines_factures';
 
   // `silent` : rechargement en arrière-plan (Realtime), sans spinner.
   const loadData = useCallback(async ({ silent = false } = {}) => {
@@ -1322,7 +1332,11 @@ function MenuiserieManagement() {
   const failedGeo = orders.filter((o) => geocodingFailed(o) && !o.cancelled);
   const categoryOrders = geoFilter === 'failed'
     ? failedGeo
-    : orders.filter((o) => orderMatchesTab(o, category));
+    : orders.filter((o) => orderMatchesTab(o, category)
+        && (!isClosedTab || closedCategory === 'all' || orderCategory(o) === closedCategory));
+  // Libellé de l'onglet + sous-section pour les exports (fichiers séparés)
+  const exportSubtitle = tabLabel(category)
+    + (isClosedTab && closedCategory !== 'all' ? ` — ${categoryLabel(closedCategory)}` : '');
 
   const filtered = categoryOrders.filter((o) => {
     const term = search.toLowerCase();
@@ -1470,6 +1484,31 @@ function MenuiserieManagement() {
           );
         })}
       </div>
+
+      {/* Terminés : séparer petites interventions / chantiers neufs (facturations distinctes) */}
+      {isClosedTab && geoFilter !== 'failed' && (
+        <div className="flex items-center gap-2 flex-wrap text-sm">
+          <span className="text-xs text-gray-500">Facturation :</span>
+          {[['all', 'Tous'], ['petites_interventions', 'Petites interventions'], ['commande_portes', 'Chantiers neufs']].map(([value, label]) => {
+            const count = orders.filter((o) => orderMatchesTab(o, category) && (value === 'all' || orderCategory(o) === value)).length;
+            const active = closedCategory === value;
+            return (
+              <button
+                key={value}
+                onClick={() => setClosedCategory(value)}
+                className={`px-3 py-1.5 rounded-full border text-xs font-medium ${
+                  active ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                }`}
+              >
+                {label} <span className={`ml-1 px-1.5 rounded-full ${active ? 'bg-white/20' : 'bg-gray-100'}`}>{count}</span>
+              </button>
+            );
+          })}
+          <span className="text-xs text-gray-500 ml-auto hidden md:inline">
+            Petites interventions et chantiers neufs se facturent séparément — l'export suit ce choix.
+          </span>
+        </div>
+      )}
 
       {/* Stats — compactes sur mobile (3 colonnes), confortables sur grand écran */}
       <div className="grid grid-cols-3 lg:grid-cols-6 gap-2 lg:gap-4">
@@ -1886,8 +1925,8 @@ function MenuiserieManagement() {
         </Modal>
       )}
       {modal.type === 'export' && (
-        <Modal title={`Export mensuel — ${tabLabel(category)}`} onClose={() => setModal({ type: null })}>
-          <ExportForm orders={categoryOrders} onClose={() => setModal({ type: null })} />
+        <Modal title={`Export mensuel — ${exportSubtitle}`} onClose={() => setModal({ type: null })}>
+          <ExportForm orders={categoryOrders} subtitle={exportSubtitle} onClose={() => setModal({ type: null })} />
         </Modal>
       )}
     </div>
@@ -1896,7 +1935,7 @@ function MenuiserieManagement() {
 
 // Formulaire d'export mensuel : choix du mois, filtre par statut,
 // puis CSV (Excel) ou PDF. Une ligne par intervention, groupée par adresse.
-const ExportForm = ({ orders, onClose }) => {
+const ExportForm = ({ orders, subtitle = '', onClose }) => {
   const now = new Date();
   const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const [month, setMonth] = useState(defaultMonth);
@@ -1920,7 +1959,7 @@ const ExportForm = ({ orders, onClose }) => {
 
   const runCsv = () => {
     try {
-      const n = exportMonthCsv(orders, month, selectedStatuses);
+      const n = exportMonthCsv(orders, month, selectedStatuses, { subtitle });
       setFeedback(n === 0
         ? `Aucune intervention sur ${monthLabel(month)} avec ces critères — fichier vide généré.`
         : `${n} intervention${n > 1 ? 's' : ''} exportée${n > 1 ? 's' : ''} (CSV téléchargé).`);
@@ -1933,7 +1972,7 @@ const ExportForm = ({ orders, onClose }) => {
   const runPdf = async () => {
     try {
       setBusy(true);
-      const n = await exportMonthPdf(orders, month, selectedStatuses);
+      const n = await exportMonthPdf(orders, month, selectedStatuses, { subtitle });
       setFeedback(n === 0
         ? `Aucune intervention sur ${monthLabel(month)} avec ces critères — PDF vide généré.`
         : `${n} intervention${n > 1 ? 's' : ''} exportée${n > 1 ? 's' : ''} (PDF ouvert).`);
