@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
+import PhotoLightbox from './PhotoLightbox';
 import { FileText, Ban, AlertTriangle, Phone, Navigation, Edit } from 'lucide-react';
 import {
   MENUISERIE_STATUS_STYLES, MENUISERIE_PHOTO_CATEGORIES, typeLabel, statusLabel,
   computeOrderStatus, orderInterventions, BILLING_STATUS_STYLES, billingLabel,
   effectiveBillingStatus, orderCategory, orderReceivedDate, relanceBadgeStyle,
-  orderRelances, orderTotalHt, fmtEuro, telHref, directionsUrls,
+  orderRelances, orderTotalHt, fmtEuro, orderPhones, directionsUrls,
 } from '../../services/menuiserieService';
 import { scheduledLabel } from '../../services/planningService';
 import { generateMenuiseriePdf, openOrDownloadPdf } from '../../services/menuiseriePdf';
@@ -19,6 +20,8 @@ import CallButton, { CallBadge } from './CallButton';
 // (ouvre l'écran photos / cotes / remarques / statut côté menuisier).
 const OrderDetail = ({ order, hideBilling = false, onEditIntervention }) => {
   const [pdfGenerating, setPdfGenerating] = useState(false);
+  // Photo agrandie : { photos, index }
+  const [lightbox, setLightbox] = useState(null);
 
   const handleGeneratePdf = async () => {
     if (pdfGenerating) return;
@@ -70,14 +73,14 @@ const OrderDetail = ({ order, hideBilling = false, onEditIntervention }) => {
           {statusLabel(computeOrderStatus(orderInterventions(order)))}
         </span>
       </div>
-      {order.client_phone && (
-        <div className="flex items-center gap-2 flex-wrap">
-          <span><span className="text-gray-500">Tél :</span> {order.client_phone}</span>
-          {telHref(order.client_phone) && (
-            <CallButton order={order} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800 hover:bg-green-200">
-              <Phone className="h-3 w-3" /> Appeler
+      {orderPhones(order).length > 0 && (
+        <div className="col-span-2 flex items-center gap-2 flex-wrap">
+          <span className="text-gray-500">Tél :</span>
+          {orderPhones(order).map((p) => (
+            <CallButton key={p.href} order={order} phone={p.raw} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800 hover:bg-green-200">
+              <Phone className="h-3 w-3" /> {p.raw}
             </CallButton>
-          )}
+          ))}
           <CallBadge order={order} />
         </div>
       )}
@@ -219,9 +222,11 @@ const OrderDetail = ({ order, hideBilling = false, onEditIntervention }) => {
               <p className="text-sm text-gray-400 italic">Aucune photo.</p>
             ) : (
               <div className="grid grid-cols-3 gap-3">
-                {iv.photos.map((p) => (
+                {iv.photos.map((p, pIdx) => (
                   <div key={p.id} className="relative">
-                    <img src={p.url} alt={p.category} className="w-full h-28 object-cover rounded-lg" />
+                    <button type="button" onClick={() => setLightbox({ photos: iv.photos, index: pIdx })} className="block w-full" title="Agrandir">
+                      <img src={p.url} alt={p.category} className="w-full h-28 object-cover rounded-lg hover:opacity-90" />
+                    </button>
                     <span className="absolute bottom-1 left-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded">
                       {MENUISERIE_PHOTO_CATEGORIES[p.category] || p.category}
                     </span>
@@ -239,6 +244,14 @@ const OrderDetail = ({ order, hideBilling = false, onEditIntervention }) => {
         </div>
       ))}
     </div>
+    {lightbox && (
+      <PhotoLightbox
+        photos={lightbox.photos}
+        index={lightbox.index}
+        onIndex={(i) => setLightbox((l) => ({ ...l, index: i }))}
+        onClose={() => setLightbox(null)}
+      />
+    )}
     </div>
   );
 };

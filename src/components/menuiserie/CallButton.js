@@ -9,20 +9,22 @@ import { logCall, lastCall, orderCalls, callLabel } from '../../services/callLog
 // jamais l'appel (en cas d'erreur, simple avertissement en console).
 //   byName    nom affiché dans la pastille (sinon : début de l'e-mail)
 //   onLogged  reçoit le nouveau journal pour mettre à jour l'état local
-export default function CallButton({ order, byName, onLogged, className = '', title, children }) {
+//   phone     numéro à appeler (par défaut le premier du bon)
+export default function CallButton({ order, phone, byName, onLogged, className = '', title, children }) {
   const { user } = useAuth();
-  const href = telHref(order?.client_phone);
+  const number = phone || order?.client_phone;
+  const href = telHref(number);
   if (!href) return null;
 
   const handleClick = () => {
     const name = byName || (user?.email ? user.email.split('@')[0] : null);
-    logCall(order, { userId: user?.id || null, byName: name })
+    logCall(order, { userId: user?.id || null, byName: name, number: String(number).trim() })
       .then((next) => onLogged?.(next))
       .catch((e) => console.warn('Appel non journalisé :', e));
   };
 
   return (
-    <a href={href} onClick={handleClick} className={className} title={title || `Appeler ${order.client_phone}`}>
+    <a href={href} onClick={handleClick} className={className} title={title || `Appeler ${String(number).trim()}`}>
       {children}
     </a>
   );

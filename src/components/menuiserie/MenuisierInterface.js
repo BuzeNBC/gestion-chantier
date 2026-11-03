@@ -13,7 +13,7 @@ import {
   typeLabel, statusLabel, computeOrderStatus, orderInterventions, newIntervention,
   findMenuiserieTrade, compareOrders, orderReceivedDate, sortInterventionOptions,
   MENUISERIE_TABS, orderMatchesTab, orderCategory, categoryLabel,
-  telHref, smsHref, directionsUrls, isIOS,
+  orderPhones, directionsUrls, isIOS,
 } from '../../services/menuiserieService';
 import { generateMenuiseriePdf, openOrDownloadPdf } from '../../services/menuiseriePdf';
 import PhotoUploadButton from '../PhotoUploadButton';
@@ -27,6 +27,7 @@ import useAutoGeocode from '../../hooks/useAutoGeocode';
 import GeocodeProgress from './GeocodeProgress';
 import NearbyOrders from './NearbyOrders';
 import CallButton, { CallBadge } from './CallButton';
+import PhotoLightbox from './PhotoLightbox';
 import InstallAppHint from '../InstallAppHint';
 import { isPlannable } from '../../services/planningService';
 import { hasCoords, coordsOf, ordersWithin, RADIUS_OPTIONS, DEFAULT_RADIUS_KM } from '../../services/geoUtils';
@@ -114,6 +115,8 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
       const haystack = [
         o.client_name,
         o.client_phone,
+        o.client_phone2,
+        o.client_phone3,
         o.address,
         o.reference,
         o.bt_number,
@@ -615,7 +618,7 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
             const ivs = orderInterventions(order);
             const aggStatus = computeOrderStatus(ivs);
             const done = ivs.filter((i) => i.status === 'completed').length;
-            const tel = telHref(order.client_phone);
+            const phones = orderPhones(order);
             const dirs = directionsUrls(order);
             return (
               <div
@@ -679,13 +682,13 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
                 </div>
                 <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0" />
               </button>
-              {(tel || dirs) && (
+              {(phones.length > 0 || dirs) && (
                 <div className="flex gap-2 px-4 pb-3 -mt-1">
-                  {tel && (
-                    <CallButton order={order} byName={myName} onLogged={onCallLogged(order.id)} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700">
-                      <Phone className="h-4 w-4" /> Appeler
+                  {phones.map((p) => (
+                    <CallButton key={p.href} order={order} phone={p.raw} byName={myName} onLogged={onCallLogged(order.id)} className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700">
+                      <Phone className="h-4 w-4" /> {phones.length > 1 ? p.raw : 'Appeler'}
                     </CallButton>
-                  )}
+                  ))}
                   {dirs && (
                     <a href={dirs.google} target="_blank" rel="noopener noreferrer" className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700">
                       <Navigation className="h-4 w-4" /> Itinéraire
@@ -768,12 +771,16 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
                 {draftIv.photos.map((p, idx) => (
                   <div key={p.id} className="flex items-center gap-1 group">
                     <button
-                      onClick={() => setPreviewPhotoUrl(p.url)}
-                      className="text-sm text-blue-600 hover:text-blue-800"
+                      onClick={() => setPreviewPhotoUrl(idx)}
+                      className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800"
+                      title="Agrandir"
                     >
-                      Photo {idx + 1}
-                      <span className="ml-1 text-xs text-gray-400">
-                        ({MENUISERIE_PHOTO_CATEGORIES[p.category] || p.category})
+                      <img src={p.url} alt={p.category} className="h-14 w-14 object-cover rounded-lg" />
+                      <span>
+                        Photo {idx + 1}
+                        <span className="ml-1 text-xs text-gray-400">
+                          ({MENUISERIE_PHOTO_CATEGORIES[p.category] || p.category})
+                        </span>
                       </span>
                     </button>
                     <button
@@ -846,25 +853,13 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
           </section>
         </main>
 
-        {previewPhotoUrl && (
-          <div
-            className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
-            onClick={() => setPreviewPhotoUrl(null)}
-          >
-            <button
-              onClick={(e) => { e.stopPropagation(); setPreviewPhotoUrl(null); }}
-              className="absolute top-4 right-4 text-white hover:text-gray-200"
-              aria-label="Fermer"
-            >
-              <X className="h-7 w-7" />
-            </button>
-            <img
-              src={previewPhotoUrl}
-              alt="Aperçu"
-              className="max-w-full max-h-full object-contain rounded-lg"
-              onClick={(e) => e.stopPropagation()}
-            />
-          </div>
+        {previewPhotoUrl !== null && (
+          <PhotoLightbox
+            photos={draftIv.photos || []}
+            index={previewPhotoUrl}
+            onIndex={setPreviewPhotoUrl}
+            onClose={() => setPreviewPhotoUrl(null)}
+          />
         )}
       </div>
     );
@@ -950,22 +945,18 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
               <User className="h-4 w-4 text-gray-400" /> {selectedOrder.client_name}
             </p>
           )}
-          {selectedOrder.client_phone && (
-            <div className="text-sm flex items-center gap-2 text-gray-700 flex-wrap">
-              <Phone className="h-4 w-4 text-gray-400" /> {selectedOrder.client_phone}
-              {telHref(selectedOrder.client_phone) && (
-                <>
-                  <CallButton order={selectedOrder} byName={myName} onLogged={onCallLogged(selectedOrder.id)} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-medium hover:bg-green-700">
-                    <Phone className="h-3.5 w-3.5" /> Appeler
-                  </CallButton>
-                  <CallBadge order={selectedOrder} />
-                  <a href={smsHref(selectedOrder.client_phone)} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 text-xs font-medium hover:bg-gray-200">
-                    SMS
-                  </a>
-                </>
-              )}
+          {orderPhones(selectedOrder).map((p) => (
+            <div key={p.href} className="text-sm flex items-center gap-2 text-gray-700 flex-wrap">
+              <Phone className="h-4 w-4 text-gray-400" /> {p.raw}
+              <CallButton order={selectedOrder} phone={p.raw} byName={myName} onLogged={onCallLogged(selectedOrder.id)} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-medium hover:bg-green-700">
+                <Phone className="h-3.5 w-3.5" /> Appeler
+              </CallButton>
+              <a href={p.sms} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-100 text-gray-700 text-xs font-medium hover:bg-gray-200">
+                SMS
+              </a>
             </div>
-          )}
+          ))}
+          {orderPhones(selectedOrder).length > 0 && <CallBadge order={selectedOrder} />}
           {selectedOrder.address && (
             <div className="text-sm flex items-center gap-2 text-gray-700 flex-wrap">
               <MapPin className="h-4 w-4 text-gray-400" /> {selectedOrder.address}

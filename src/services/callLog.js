@@ -20,12 +20,13 @@ export const callLabel = (call) => {
 };
 
 // Ajoute une entrée et l'enregistre (on garde les 30 derniers appels).
-export const logCall = async (order, { userId = null, byName = null } = {}) => {
+export const logCall = async (order, { userId = null, byName = null, number = null } = {}) => {
   const entry = {
     id: typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : `c-${Date.now()}`,
     at: new Date().toISOString(),
     by: userId,
     by_name: byName,
+    number,
   };
   const next = [...orderCalls(order), entry].slice(-30);
   const { error } = await supabase

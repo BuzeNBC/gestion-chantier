@@ -14,6 +14,7 @@ import ScheduleModal from './ScheduleModal';
 import Modal from './MenuiserieModal';
 import OrderDetail from './OrderDetail';
 import OrderSidePanel from './OrderSidePanel';
+import InterventionEditModal from './InterventionEditModal';
 
 // Page « Planning » partagée : calendrier commun à tous les menuisiers,
 // géré par l'admin ET les menuisiers. Charge ses propres données, s'abonne
@@ -63,6 +64,8 @@ export default function PlanningPage({ canEdit = false, embedded = false, showDe
   const [detailOrder, setDetailOrder] = useState(null);
   // Grand écran : bon sélectionné, affiché dans le volet latéral
   const [selectedId, setSelectedId] = useState(null);
+  // Admin : édition d'une intervention depuis le volet / le détail
+  const [editIv, setEditIv] = useState(null); // { order, iv }
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
@@ -261,7 +264,9 @@ export default function PlanningPage({ canEdit = false, embedded = false, showDe
             order={selectedOrder}
             hideBilling={embedded}
             onClose={() => setSelectedId(null)}
-            onEditIntervention={onEditIntervention ? (iv) => onEditIntervention(selectedOrder, iv) : undefined}
+            onEditIntervention={onEditIntervention
+              ? (iv) => onEditIntervention(selectedOrder, iv)
+              : showDetail ? (iv) => setEditIv({ order: selectedOrder, iv }) : undefined}
             actions={(
               <>
                 {onOpenOrder && (
@@ -322,8 +327,22 @@ export default function PlanningPage({ canEdit = false, embedded = false, showDe
       )}
       {detailOrder && (
         <Modal title={detailOrder.client_name || 'Détail du bon'} onClose={() => setDetailOrder(null)} wide>
-          <OrderDetail order={detailOrder} />
+          <OrderDetail
+            order={orders.find((o) => o.id === detailOrder.id) || detailOrder}
+            onEditIntervention={showDetail ? (iv) => setEditIv({ order: detailOrder, iv }) : undefined}
+          />
         </Modal>
+      )}
+      {editIv && (
+        <InterventionEditModal
+          order={orders.find((o) => o.id === editIv.order.id) || editIv.order}
+          intervention={editIv.iv}
+          onSaved={(updated) => {
+            setOrders((prev) => prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)));
+            setEditIv(null);
+          }}
+          onClose={() => setEditIv(null)}
+        />
       )}
     </div>
   );

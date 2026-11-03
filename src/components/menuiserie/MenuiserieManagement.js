@@ -18,6 +18,7 @@ import OrderDetail from './OrderDetail';
 import GeocodeProgress from './GeocodeProgress';
 import OrderSidePanel from './OrderSidePanel';
 import CallButton, { CallBadge } from './CallButton';
+import InterventionEditModal from './InterventionEditModal';
 import useOrdersRealtime from '../../hooks/useOrdersRealtime';
 import useAutoGeocode from '../../hooks/useAutoGeocode';
 import { DURATION_OPTIONS, DEFAULT_DURATION, hhmm, durationLabel, scheduledLabel } from '../../services/planningService';
@@ -33,7 +34,7 @@ import {
   MENUISERIE_CATEGORIES, orderCategory, categoryLabel, compareOrders, orderReceivedDate,
   sortInterventionOptions, MENUISERIE_TABS, orderMatchesTab, orderFactureMonth,
   relanceBadgeStyle, relanceBorderStyle, orderRelances, newRelance,
-  orderTotalHt, fmtEuro, telHref, directionsUrls,
+  orderTotalHt, fmtEuro, telHref, directionsUrls, orderPhones, extractPhones,
 } from '../../services/menuiserieService';
 import { exportMonthCsv, exportMonthPdf, monthLabel } from '../../services/menuiserieExport';
 import InterventionLinesEditor from './InterventionLinesEditor';
@@ -50,7 +51,7 @@ const tabLabel = (tab) => (MENUISERIE_TABS.find(([v]) => v === tab) || [])[1] ||
 const menuItemClass = 'flex w-full items-center gap-2 px-3 py-2 text-sm text-left data-[focus]:bg-gray-100 rounded-md';
 const RowActionsMenu = ({ order, actions }) => {
   const isChantierNeuf = orderCategory(order) === 'commande_portes';
-  const tel = telHref(order.client_phone);
+  const phones = orderPhones(order);
   const dirs = directionsUrls(order);
   return (
     <Menu>
@@ -80,14 +81,14 @@ const RowActionsMenu = ({ order, actions }) => {
             </button>
           </MenuItem>
         )}
-        {(tel || dirs) && <div className="my-1 border-t border-gray-100" />}
-        {tel && (
-          <MenuItem>
-            <CallButton order={order} byName="Admin" onLogged={(next) => actions.callLogged?.(order, next)} className={`${menuItemClass} text-green-700`}>
-              <Phone className="h-4 w-4" /> Appeler {order.client_phone}
+        {(phones.length > 0 || dirs) && <div className="my-1 border-t border-gray-100" />}
+        {phones.map((p) => (
+          <MenuItem key={p.href}>
+            <CallButton order={order} phone={p.raw} byName="Admin" onLogged={(next) => actions.callLogged?.(order, next)} className={`${menuItemClass} text-green-700`}>
+              <Phone className="h-4 w-4" /> Appeler {p.raw}
             </CallButton>
           </MenuItem>
-        )}
+        ))}
         {dirs && (
           <MenuItem>
             <a href={dirs.google} target="_blank" rel="noopener noreferrer" className={`${menuItemClass} text-blue-700`}>
@@ -114,6 +115,8 @@ const RowActionsMenu = ({ order, actions }) => {
 const emptyForm = {
   client_name: '',
   client_phone: '',
+  client_phone2: '',
+  client_phone3: '',
   address: '',
   description: '',
   assigned_to: '',
@@ -250,7 +253,16 @@ const initialLinesFromOrder = (order) => {
 const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOptions, defaultCategory, defaultDevisValide = false, onSubmit, onCancel }) => {
   const [form, setForm] = useState(order ? {
     client_name: order.client_name || '',
-    client_phone: order.client_phone || '',
+    // Anciens bons : plusieurs numéros tapés à la suite -> un par champ
+    ...(() => {
+      const multi = extractPhones(order.client_phone || '');
+      const split = multi.length > 1 && !order.client_phone2 && !order.client_phone3;
+      return {
+        client_phone: split ? multi[0] : (order.client_phone || ''),
+        client_phone2: split ? (multi[1] || '') : (order.client_phone2 || ''),
+        client_phone3: split ? (multi[2] || '') : (order.client_phone3 || ''),
+      };
+    })(),
     address: order.address || '',
     description: order.description || '',
     assigned_to: order.assigned_to || '',
@@ -369,6 +381,9 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
         : null,
       reference: form.reference || null,
       bt_number: form.bt_number || null,
+      client_phone: (form.client_phone || '').trim() || null,
+      client_phone2: (form.client_phone2 || '').trim() || null,
+      client_phone3: (form.client_phone3 || '').trim() || null,
       // Tâches à ajouter au corps d'état Menuiserie
       _customTypesToPersist: newTaskTypes,
       _customCAToPersist: customCAMode && effectiveCA && !chargeAffaireOptions.includes(effectiveCA) ? effectiveCA : null,
@@ -400,6 +415,30 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
             placeholder="06 12 34 56 78"
           />
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium mb-1">Téléphone 2</label>
+          <input
+            type="tel"
+            value={form.client_phone2}
+            onChange={(e) => set('client_phone2', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            placeholder="Gardien, agence…"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Téléphone 3</label>
+          <input
+            type="tel"
+            value={form.client_phone3}
+            onChange={(e) => set('client_phone3', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+            placeholder="Autre contact"
+          />
+        </div>
+        <p className="sm:col-span-2 text-xs text-gray-500 -mt-2">Un numéro par champ : chacun aura son bouton « Appeler ».</p>
       </div>
 
       <label className={`flex items-center gap-2 px-3 py-2.5 rounded-lg border cursor-pointer ${
@@ -1712,16 +1751,21 @@ function MenuiserieManagement() {
               )}
             </div>
             <div className="flex items-center gap-1 flex-shrink-0 self-end sm:self-auto">
-              {telHref(order.client_phone) && (
+              {orderPhones(order).map((p, pi) => (
                 <CallButton
+                  key={p.href}
                   order={order}
+                  phone={p.raw}
                   byName="Admin"
                   onLogged={(next) => setOrders((prev) => prev.map((x) => (x.id === order.id ? { ...x, call_log: next } : x)))}
-                  className="p-2 text-green-600 hover:bg-green-50 rounded-lg"
+                  className="relative p-2 text-green-600 hover:bg-green-50 rounded-lg"
                 >
                   <Phone className="h-4 w-4" />
+                  {orderPhones(order).length > 1 && (
+                    <span className="absolute -top-0.5 -right-0.5 text-[9px] font-bold bg-green-600 text-white rounded-full w-3.5 h-3.5 flex items-center justify-center">{pi + 1}</span>
+                  )}
                 </CallButton>
-              )}
+              ))}
               {!order.cancelled && (
                 <button
                   onClick={() => setModal({ type: 'schedule', data: order })}
@@ -1858,6 +1902,7 @@ function MenuiserieManagement() {
                 order={orders.find((o) => o.id === modal.selectedId)}
                 heightClass="max-h-[70vh]"
                 onClose={() => setModal((m) => ({ ...m, selectedId: null }))}
+                onEditIntervention={(iv) => setModal({ type: 'edit_iv', data: orders.find((o) => o.id === modal.selectedId), iv, returnTo: modal })}
                 actions={(
                   <>
                     <button
@@ -1882,6 +1927,17 @@ function MenuiserieManagement() {
             {' '}{categoryOrders.filter((o) => o.address && !hasCoords(o)).length} bon(s) de cet onglet sans position.
           </p>
         </Modal>
+      )}
+      {modal.type === 'edit_iv' && (
+        <InterventionEditModal
+          order={orders.find((o) => o.id === modal.data.id) || modal.data}
+          intervention={modal.iv}
+          onSaved={(updated) => {
+            setOrders((prev) => prev.map((o) => (o.id === updated.id ? { ...o, ...updated } : o)));
+            setModal(modal.returnTo ? { ...modal.returnTo, data: updated } : { type: null });
+          }}
+          onClose={() => setModal(modal.returnTo || { type: null })}
+        />
       )}
       {modal.type === 'cancel' && (
         <Modal title={`Annulation — ${modal.data.client_name || 'bon'}`} onClose={() => setModal({ type: null })}>
@@ -1921,7 +1977,10 @@ function MenuiserieManagement() {
       )}
       {modal.type === 'detail' && (
         <Modal title={modal.data.client_name || 'Détail du bon'} onClose={() => setModal({ type: null })} wide>
-          <OrderDetail order={modal.data} />
+          <OrderDetail
+            order={orders.find((o) => o.id === modal.data.id) || modal.data}
+            onEditIntervention={(iv) => setModal({ type: 'edit_iv', data: modal.data, iv, returnTo: modal })}
+          />
         </Modal>
       )}
       {modal.type === 'export' && (

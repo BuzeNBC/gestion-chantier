@@ -1,7 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import {
   typeLabel, statusLabel, orderInterventions, billingLabel, orderRelances,
-  effectiveBillingStatus, orderReceivedDate, orderCategory, categoryLabel,
+  effectiveBillingStatus, orderReceivedDate, orderCategory, categoryLabel, orderPhones,
 } from './menuiserieService';
 
 // Suffixe de nom de fichier à partir du sous-titre (onglet / sous-section)
@@ -48,7 +48,7 @@ export const collectMonthRows = (orders, yearMonth, statuses = null) => {
         date: d,
         address: order.address || '(adresse non renseignée)',
         client: order.client_name || '',
-        phone: order.client_phone || '',
+        phone: orderPhones(order).map((p) => p.raw).join(' / '),
         bt: order.bt_number || '',
         chargeAffaire: order.charge_affaire || '',
         menuisier: order.assigned_profile?.Name || '',

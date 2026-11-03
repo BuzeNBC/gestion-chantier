@@ -246,6 +246,26 @@ export const smsHref = (phone) => {
   return n ? `sms:${n}` : null;
 };
 
+// Plusieurs numéros par bon : client_phone (+ anciens bons où plusieurs
+// numéros ont été tapés à la suite), client_phone2, client_phone3.
+const PHONE_RE = /(?:\+33\s?|0)[1-9](?:[\s.\-]?\d{2}){4}/g;
+export const extractPhones = (text) => (String(text || '').match(PHONE_RE) || []).map((s) => s.trim());
+// [{ raw, href: 'tel:…', sms: 'sms:…' }] dédoublonnés, dans l'ordre
+export const orderPhones = (order) => {
+  const found = [];
+  const push = (raw) => {
+    const n = normalizePhone(raw);
+    if (!n || found.some((p) => p.href === `tel:${n}`)) return;
+    found.push({ raw: String(raw).trim(), href: `tel:${n}`, sms: `sms:${n}` });
+  };
+  const first = String(order?.client_phone || '').trim();
+  const multi = extractPhones(first);
+  if (multi.length > 1) multi.forEach(push);
+  else if (first) push(first);
+  [order?.client_phone2, order?.client_phone3].forEach((p) => { if (p && String(p).trim()) push(p); });
+  return found;
+};
+
 export const isIOS = () =>
   typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
