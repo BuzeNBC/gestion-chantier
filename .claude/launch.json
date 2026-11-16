@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "gestion-chantier",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [".claude/static-server.js", "5050"],
+      "port": 5050
+    }
+  ]
+}

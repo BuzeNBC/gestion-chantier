@@ -1,14 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase'; // Ajoutez cet import
-import { 
-  LayoutDashboard, 
-  Hammer, 
-  Building2, 
+import {
+  LayoutDashboard,
+  Hammer,
+  Building2,
   LogOut,
   UserCog,
-  CheckCircle
+  CheckCircle,
+  DoorOpen,
+  CalendarDays,
+  Menu,
+  X
 } from 'lucide-react';
 import { DBService } from '../services/dbService';
 import TradesContent from './TradesContent';
@@ -16,6 +20,16 @@ import SiteManagement from './SiteManagement';
 import WorkerInterface from './WorkerInterface';
 import LoginModal from './LoginModal';
 import CompletedSites from './CompletedSites';
+import MenuiserieManagement from './menuiserie/MenuiserieManagement';
+import MenuisierInterface from './menuiserie/MenuisierInterface';
+
+// Planning (FullCalendar) chargé à la demande : ~90 ko gz hors du bundle principal.
+const PlanningPage = lazy(() => import('./menuiserie/PlanningPage'));
+const PageSpinner = () => (
+  <div className="flex items-center justify-center h-64">
+    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+  </div>
+);
 
 function DashboardContent() {
   const [sites, setSites] = useState([]);
@@ -131,6 +145,8 @@ function DashboardContent() {
 
 function AdminDashboard() {
   const [activePage, setActivePage] = useState('dashboard');
+  // Menu latéral : tiroir coulissant sur mobile, fixe sur grand écran.
+  const [navOpen, setNavOpen] = useState(false);
   const [userRole, setUserRole] = useState('worker');
   const [realUserRole, setRealUserRole] = useState(null);
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -155,6 +171,9 @@ function AdminDashboard() {
           if (profile?.role === 'admin') {
             setUserRole('admin');
             setRealUserRole('admin');
+          } else if (profile?.role === 'menuisier') {
+            setUserRole('menuisier');
+            setRealUserRole('menuisier');
           } else {
             setUserRole('worker');
             setRealUserRole('worker');
@@ -188,11 +207,13 @@ function AdminDashboard() {
     }
   };
 
+  // Le vrai compte admin (rôle vérifié en base) bascule librement entre les
+  // deux modes, sans redemander le mot de passe.
   const handleRoleButtonClick = () => {
-    if (userRole === 'worker') {
+    if (realUserRole === 'admin') {
+      handleRoleChange(userRole === 'worker' ? 'admin' : 'worker');
+    } else if (userRole === 'worker') {
       setShowLoginModal(true);
-    } else {
-      handleRoleChange('worker');
     }
   };
 
@@ -204,17 +225,60 @@ function AdminDashboard() {
     );
   }
 
+  // Le menuisier dispose d'une interface dédiée et épurée : il ne voit QUE
+  // ses bons de menuiserie, sans le reste de l'application (chantiers, corps
+  // d'état, etc.) pour ne pas s'y perdre.
+  if (realUserRole === 'menuisier') {
+    return <MenuisierInterface />;
+  }
+
+  const go = (page) => {
+    setActivePage(page);
+    setNavOpen(false);
+  };
+
   return (
     <div className="flex min-h-screen bg-gray-100">
-      <div className="w-64 bg-white shadow-lg">
-        <div className="px-6 py-8">
+      {/* Barre supérieure mobile : hamburger + titre */}
+      <div className="lg:hidden fixed top-0 inset-x-0 z-40 bg-white shadow flex items-center gap-3 px-4 py-3">
+        <button
+          onClick={() => setNavOpen(true)}
+          className="p-1.5 -ml-1.5 text-gray-700 hover:bg-gray-100 rounded-lg"
+          aria-label="Ouvrir le menu"
+        >
+          <Menu className="h-6 w-6" />
+        </button>
+        <h1 className="text-lg font-bold text-gray-800">
+          {userRole === 'admin' ? 'Administration' : 'Interface Ouvrier'}
+        </h1>
+      </div>
+
+      {/* Voile derrière le tiroir mobile */}
+      {navOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/40 z-40"
+          onClick={() => setNavOpen(false)}
+        />
+      )}
+
+      {/* Menu latéral : tiroir sur mobile, colonne fixe sur grand écran */}
+      <div className={`w-64 bg-white shadow-lg fixed inset-y-0 left-0 z-50 transform transition-transform duration-200 overflow-y-auto
+        lg:static lg:translate-x-0 lg:z-auto ${navOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="px-6 py-6 lg:py-8 flex items-center justify-between">
           <h1 className="text-2xl font-bold text-gray-800">
             {userRole === 'admin' ? 'Administration' : 'Interface Ouvrier'}
           </h1>
+          <button
+            onClick={() => setNavOpen(false)}
+            className="lg:hidden p-1.5 text-gray-500 hover:bg-gray-100 rounded-lg"
+            aria-label="Fermer le menu"
+          >
+            <X className="h-5 w-5" />
+          </button>
         </div>
         <nav className="px-6 py-4 space-y-2">
           <button
-            onClick={() => setActivePage('dashboard')}
+            onClick={() => go('dashboard')}
             className={`w-full flex items-center px-4 py-2 rounded-lg ${
               activePage === 'dashboard' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100'
             } transition duration-300`}
@@ -226,7 +290,7 @@ function AdminDashboard() {
           {userRole === 'admin' && (
             <>
               <button
-                onClick={() => setActivePage('trades')}
+                onClick={() => go('trades')}
                 className={`w-full flex items-center px-4 py-2 rounded-lg ${
                   activePage === 'trades' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100'
                 } transition duration-300`}
@@ -235,7 +299,7 @@ function AdminDashboard() {
                 Corps d'état
               </button>
               <button
-                onClick={() => setActivePage('sites')}
+                onClick={() => go('sites')}
                 className={`w-full flex items-center px-4 py-2 rounded-lg ${
                   activePage === 'sites' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100'
                 } transition duration-300`}
@@ -243,13 +307,45 @@ function AdminDashboard() {
                 <Building2 className="h-5 w-5 mr-2" />
                 Chantiers
               </button>
+              <button
+                onClick={() => go('menuiserie')}
+                className={`w-full flex items-center px-4 py-2 rounded-lg ${
+                  activePage === 'menuiserie' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100'
+                } transition duration-300`}
+              >
+                <DoorOpen className="h-5 w-5 mr-2" />
+                Menuiserie
+              </button>
+              <button
+                onClick={() => go('planning')}
+                className={`w-full flex items-center px-4 py-2 rounded-lg ${
+                  activePage === 'planning' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100'
+                } transition duration-300`}
+              >
+                <CalendarDays className="h-5 w-5 mr-2" />
+                Planning
+              </button>
             </>
+          )}
+
+          {/* Onglet Menuiserie pour les ouvriers — leur permet de consulter
+              et d'éditer tous les bons menuiserie (coordination chantier). */}
+          {userRole === 'worker' && (
+            <button
+              onClick={() => go('menuiserie')}
+              className={`w-full flex items-center px-4 py-2 rounded-lg ${
+                activePage === 'menuiserie' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100'
+              } transition duration-300`}
+            >
+              <DoorOpen className="h-5 w-5 mr-2" />
+              Menuiserie
+            </button>
           )}
 
           {/* Ne montrer le bouton de changement de rôle que pour les vrais admins */}
           {realUserRole === 'admin' && (
             <button
-              onClick={handleRoleButtonClick}
+              onClick={() => { setNavOpen(false); handleRoleButtonClick(); }}
               className="w-full flex items-center px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100 transition duration-300"
             >
               <UserCog className="h-5 w-5 mr-2" />
@@ -258,7 +354,7 @@ function AdminDashboard() {
           )}
           {userRole === 'admin' && (
   <button
-    onClick={() => setActivePage('completed')}
+    onClick={() => go('completed')}
     className={`w-full flex items-center px-4 py-2 rounded-lg ${
       activePage === 'completed' ? 'bg-blue-100 text-blue-600' : 'text-gray-600 hover:bg-gray-100'
     } transition duration-300`}
@@ -277,14 +373,25 @@ function AdminDashboard() {
         </nav>
       </div>
 
-      <div className="flex-1 p-8">
+      <div className="flex-1 min-w-0 p-4 pt-16 lg:p-8 lg:pt-8">
         {userRole === 'admin' ? (
           <>
             {activePage === 'dashboard' && <DashboardContent />}
             {activePage === 'trades' && <TradesContent />}
             {activePage === 'sites' && <SiteManagement />}
+            {activePage === 'menuiserie' && <MenuiserieManagement />}
+            {activePage === 'planning' && (
+              <Suspense fallback={<PageSpinner />}>
+                <PlanningPage canEdit showDetail />
+              </Suspense>
+            )}
             {activePage === 'completed' && <CompletedSites />}
           </>
+        ) : activePage === 'menuiserie' ? (
+          // Ouvrier sur l'onglet Menuiserie : on réutilise l'interface
+          // menuisier en mode "embedded" (sans header logout) + showAllBons
+          // (l'ouvrier voit TOUS les bons, pas seulement les siens).
+          <MenuisierInterface embedded showAllBons />
         ) : (
           <WorkerInterface isAdminInWorkerMode={realUserRole === 'admin'} />
         )}
