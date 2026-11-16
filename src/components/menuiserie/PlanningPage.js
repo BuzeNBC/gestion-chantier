@@ -7,7 +7,7 @@ import {
   colorForMenuisier, orderToEvent, findConflicts, conflictsFor, isPlannable, hhmm, durationLabel,
   DEFAULT_DURATION, addMinutesToTime,
 } from '../../services/planningService';
-import { needsFieldVisit } from '../../services/menuiserieService';
+import { needsFieldVisit, isPlanningCandidate } from '../../services/menuiserieService';
 import { hasCoords, coordsOf, ordersWithin } from '../../services/geoUtils';
 import NearbyOrders from './NearbyOrders';
 import useOrdersRealtime from '../../hooks/useOrdersRealtime';
@@ -134,7 +134,7 @@ export default function PlanningPage({ canEdit = false, embedded = false, showDe
     [orders, selectedId],
   );
   const unscheduled = useMemo(
-    () => orders.filter((o) => !o.scheduled_date && needsFieldVisit(o) && matchesFilter(o)),
+    () => orders.filter((o) => !o.scheduled_date && isPlanningCandidate(o) && matchesFilter(o)),
     [orders, matchesFilter],
   );
   // Candidats « à la suite » : bons où il faut encore aller, sans date (ou
@@ -286,15 +286,15 @@ export default function PlanningPage({ canEdit = false, embedded = false, showDe
             onEditIntervention={onEditIntervention
               ? (iv) => onEditIntervention(selectedOrder, iv)
               : showDetail ? (iv) => setEditIv({ order: selectedOrder, iv }) : undefined}
-            top={!embedded && canEdit && selectedOrder.scheduled_date ? (
-              <div className="mb-4 pb-4 border-b border-gray-200 space-y-2">
+            bottom={!embedded && canEdit && selectedOrder.scheduled_date ? (
+              <div className="mt-5 pt-4 border-t border-gray-200 space-y-2">
                 <h4 className="font-semibold text-gray-800 flex items-center gap-2">
                   <MapIcon className="h-4 w-4 text-gray-400" /> À planifier à proximité
                 </h4>
                 {hasCoords(selectedOrder) ? (
                   <>
                     <p className="text-xs text-gray-500">
-                      Bons où il faut encore aller, autour de ce RDV. « À la suite » = même jour, {nextSlotTime}, même menuisier.
+                      Petites interventions encore à faire autour de ce RDV. « À la suite » = même jour, {nextSlotTime}, même menuisier.
                     </p>
                     <Suspense fallback={null}>
                       <OrdersMap

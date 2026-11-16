@@ -17,6 +17,7 @@ export default function OrderSidePanel({
   className = '',
   onEditIntervention,
   top = null,
+  bottom = null,
 }) {
   const status = computeOrderStatus(orderInterventions(order));
   return (
@@ -38,6 +39,7 @@ export default function OrderSidePanel({
       <div className="overflow-y-auto px-4 py-3 text-sm">
         {top}
         <OrderDetail order={order} hideBilling={hideBilling} onEditIntervention={onEditIntervention} />
+        {bottom}
       </div>
     </aside>
   );

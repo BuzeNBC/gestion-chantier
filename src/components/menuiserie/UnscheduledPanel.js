@@ -34,7 +34,9 @@ const OrderItem = ({ order, onPick, draggable }) => {
             </span>
           )}
           {orderCategory(order) === 'commande_portes' && (
-            <span className="text-[10px] px-1.5 rounded-full bg-indigo-100 text-indigo-800">{categoryLabel('commande_portes')}</span>
+            <span className="text-[10px] px-1.5 rounded-full bg-indigo-100 text-indigo-800">
+              {categoryLabel('commande_portes')} · {order.devis_valide ? 'devis validé' : 'devis en attente'}
+            </span>
           )}
         </div>
         {ivs[0] && <div className="text-xs text-blue-700 truncate">{typeLabel(ivs[0].type)}{ivs.length > 1 ? ` +${ivs.length - 1}` : ''}</div>}

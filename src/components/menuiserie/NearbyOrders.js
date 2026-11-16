@@ -64,7 +64,9 @@ export default function NearbyOrders({
                       </span>
                     )}
                     {orderCategory(o) === 'commande_portes' && (
-                      <span className="text-[10px] px-1.5 rounded-full bg-indigo-100 text-indigo-800">{categoryLabel('commande_portes')}</span>
+                      <span className="text-[10px] px-1.5 rounded-full bg-indigo-100 text-indigo-800">
+                        {categoryLabel('commande_portes')} · {o.devis_valide ? 'devis validé' : 'devis en attente'}
+                      </span>
                     )}
                   </div>
                   <div className="text-xs text-gray-500 flex items-center gap-1 truncate">

@@ -111,10 +111,11 @@ export const fieldReason = (order) => {
   if (computeOrderStatus(orderInterventions(order)) === 'completed') return 'termine';
   if (order.field_status === 'en_attente') return 'manuel_attente';
   if (order.field_status === 'a_faire') return 'a_faire';
+  // Les chantiers neufs (cotes, devis, pose) se planifient à part, jamais
+  // « à la suite » d'une tournée : ils ne sont proposés automatiquement nulle
+  // part. Forçable avec le réglage Terrain « À faire ».
   if (orderCategory(order) === 'commande_portes') {
-    if (order.devis_valide) return 'production';
-    if (order.billing_status === 'devis_fait' || orderVisited(order)) return 'attente_devis';
-    return 'cotes';
+    return order.devis_valide ? 'production' : 'attente_devis';
   }
   if (WAITING_BILLING.includes(order.billing_status)) return 'facturation';
   return 'a_faire';
@@ -124,16 +125,23 @@ export const FIELD_REASON_LABELS = {
   termine: 'Terminé',
   manuel_attente: 'En attente (réglé à la main)',
   facturation: 'Devis fait / facturation en cours',
-  attente_devis: 'En attente du retour de devis',
+  attente_devis: 'Chantier neuf — devis en attente de validation',
   a_faire: 'À faire',
-  cotes: 'Cotes à prendre',
-  production: 'Devis validé — pose à prévoir',
+  production: 'Chantier neuf — devis validé, pose à planifier',
 };
 export const fieldReasonLabel = (order) => FIELD_REASON_LABELS[fieldReason(order)] || '';
-// À afficher sur la carte / à planifier
-export const needsFieldVisit = (order) => ['a_faire', 'cotes', 'production'].includes(fieldReason(order));
-// Ouvert mais « au bureau » (devis, facturation, attente) : ni carte, ni planning
-export const isWaiting = (order) => ['manuel_attente', 'facturation', 'attente_devis'].includes(fieldReason(order));
+// Proposé automatiquement (carte, « autour de moi », « à la suite », bons
+// proches) : uniquement les petites interventions encore à faire, ou un bon
+// forcé « À faire ».
+export const needsFieldVisit = (order) => fieldReason(order) === 'a_faire';
+// Ouvert mais pas proposé (chantier neuf, devis, facturation, réglé à la main)
+export const isWaiting = (order) =>
+  ['manuel_attente', 'facturation', 'attente_devis', 'production'].includes(fieldReason(order));
+// Peut être posé dans le planning (liste « À planifier ») : tout bon ouvert,
+// chantiers neufs compris, sauf ceux au bureau (facturation) ou mis en
+// attente à la main.
+export const isPlanningCandidate = (order) =>
+  !['annule', 'termine', 'manuel_attente', 'facturation'].includes(fieldReason(order));
 
 // Statuts de facturation d'un bon — parcours de la secrétaire :
 // devis à faire -> devis fait -> à facturer -> en cours de facturation -> facturé

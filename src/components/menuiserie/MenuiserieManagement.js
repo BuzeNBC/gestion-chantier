@@ -75,14 +75,24 @@ const RowActionsMenu = ({ order, actions }) => {
             <AlertTriangle className="h-4 w-4" /> {order.is_urgent ? "Retirer l'urgence" : 'Marquer urgent'}
           </button>
         </MenuItem>
-        {!order.cancelled && (
-          <MenuItem>
-            <button onClick={() => actions.setFieldStatus(order, order.field_status === 'en_attente' ? 'auto' : 'en_attente')} className={`${menuItemClass} text-gray-700`}>
-              <MapPinOff className="h-4 w-4" />
-              {order.field_status === 'en_attente' ? 'Remettre sur la carte (automatique)' : 'Masquer de la carte (en attente)'}
-            </button>
-          </MenuItem>
-        )}
+        {!order.cancelled && (() => {
+          const fs = order.field_status || 'auto';
+          const onMap = needsFieldVisit(order);
+          const next = fs !== 'auto' ? 'auto' : (onMap ? 'en_attente' : 'a_faire');
+          const label = fs === 'a_faire'
+            ? 'Carte : retirer le forçage « à faire »'
+            : fs === 'en_attente'
+              ? 'Carte : remettre en automatique'
+              : onMap ? 'Masquer de la carte (en attente)' : 'Forcer sur la carte (à faire)';
+          return (
+            <MenuItem>
+              <button onClick={() => actions.setFieldStatus(order, next)} className={`${menuItemClass} text-gray-700`}>
+                {onMap ? <MapPinOff className="h-4 w-4" /> : <MapPin className="h-4 w-4" />}
+                {label}
+              </button>
+            </MenuItem>
+          );
+        })()}
         {isChantierNeuf && (
           <MenuItem>
             <button onClick={() => actions.devisValide(order)} className={`${menuItemClass} text-teal-700`}>
@@ -640,7 +650,7 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
               <option key={v} value={v}>{l}</option>
             ))}
           </select>
-          <p className="text-xs text-gray-500 mt-1">Automatique : masqué si terminé, annulé, devis fait / en attente de devis.</p>
+          <p className="text-xs text-gray-500 mt-1">Automatique : seules les petites interventions à faire sont proposées sur la carte ; chantiers neufs, devis fait, terminés et annulés ne le sont pas.</p>
         </div>
       </div>
 
@@ -1730,8 +1740,13 @@ function MenuiserieManagement() {
                   </span>
                 )}
                 <CallBadge order={order} />
-                {!order.cancelled && isWaiting(order) && (
-                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-700" title="Masqué de la carte des menuisiers">
+                {!order.cancelled && order.field_status === 'a_faire' && (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-emerald-50 text-emerald-700 border border-emerald-200" title="Forcé sur la carte des menuisiers">
+                    <MapPin className="h-3 w-3" /> Sur la carte (forcé)
+                  </span>
+                )}
+                {!order.cancelled && isWaiting(order) && (orderCategory(order) !== 'commande_portes' || order.field_status === 'en_attente') && (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-700" title="Pas proposé sur la carte des menuisiers">
                     <MapPinOff className="h-3 w-3" /> {fieldReasonLabel(order)}
                   </span>
                 )}
@@ -1936,7 +1951,7 @@ function MenuiserieManagement() {
             <div className="flex-1 min-w-0 w-full">
               <Suspense fallback={<div className="h-[70vh] flex items-center justify-center"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" /></div>}>
                 <OrdersMap
-                  orders={categoryOrders.filter((o) => !o.cancelled && (mapShowWaiting || isClosedTab || needsFieldVisit(o)))}
+                  orders={categoryOrders.filter((o) => !o.cancelled && (mapShowWaiting || category !== 'petites_interventions' || needsFieldVisit(o)))}
                   fit
                   selectedId={modal.selectedId || null}
                   onSelect={(o) => setModal((m) => ({ ...m, selectedId: o.id }))}
@@ -1971,7 +1986,7 @@ function MenuiserieManagement() {
           </div>
           <div className="flex items-center gap-3 flex-wrap text-xs text-gray-500 mt-2">
             <span>Rouge = urgent · orange = relancé · bleu = à faire · gris = en attente / clos. Les annulés ne sont jamais affichés.</span>
-            {!isClosedTab && categoryOrders.some((o) => isWaiting(o)) && (
+            {category === 'petites_interventions' && categoryOrders.some((o) => isWaiting(o)) && (
               <label className="flex items-center gap-1.5 cursor-pointer text-gray-600">
                 <input type="checkbox" checked={mapShowWaiting} onChange={(e) => setMapShowWaiting(e.target.checked)} className="h-3.5 w-3.5 rounded border-gray-300" />
                 Afficher aussi les {categoryOrders.filter((o) => isWaiting(o)).length} en attente

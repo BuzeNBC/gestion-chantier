@@ -471,7 +471,7 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
                 {waitingOrders.length > 0 && (
                   <label className="flex items-center gap-1.5 cursor-pointer text-gray-600">
                     <input type="checkbox" checked={showWaiting} onChange={(e) => setShowWaiting(e.target.checked)} className="h-3.5 w-3.5 rounded border-gray-300" />
-                    Afficher aussi les {waitingOrders.length} en attente (devis, facturation)
+                    Afficher aussi les {waitingOrders.length} non proposés (chantiers neufs, devis, facturation)
                   </label>
                 )}
               </div>
