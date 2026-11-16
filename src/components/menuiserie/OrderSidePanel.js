@@ -16,6 +16,7 @@ export default function OrderSidePanel({
   heightClass = 'max-h-[calc(100vh-7rem)] sticky top-4',
   className = '',
   onEditIntervention,
+  top = null,
 }) {
   const status = computeOrderStatus(orderInterventions(order));
   return (
@@ -35,6 +36,7 @@ export default function OrderSidePanel({
         <div className="flex flex-wrap gap-2 px-4 py-2 border-b border-gray-100 bg-gray-50">{actions}</div>
       )}
       <div className="overflow-y-auto px-4 py-3 text-sm">
+        {top}
         <OrderDetail order={order} hideBilling={hideBilling} onEditIntervention={onEditIntervention} />
       </div>
     </aside>

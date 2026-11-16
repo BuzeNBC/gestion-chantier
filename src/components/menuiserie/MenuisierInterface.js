@@ -13,7 +13,7 @@ import {
   typeLabel, statusLabel, computeOrderStatus, orderInterventions, newIntervention,
   findMenuiserieTrade, compareOrders, orderReceivedDate, sortInterventionOptions,
   MENUISERIE_TABS, orderMatchesTab, orderCategory, categoryLabel,
-  orderPhones, directionsUrls, isIOS,
+  orderPhones, directionsUrls, isIOS, needsFieldVisit, isWaiting,
 } from '../../services/menuiserieService';
 import { generateMenuiseriePdf, openOrDownloadPdf } from '../../services/menuiseriePdf';
 import PhotoUploadButton from '../PhotoUploadButton';
@@ -146,7 +146,15 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
 
   // Bons « ouverts » (ni terminés ni annulés) : la carte et la proximité
   // portent sur eux, toutes sous-sections confondues.
-  const openOrders = useMemo(() => orders.filter((o) => isPlannable(o)), [orders]);
+  // « À faire » = il faut encore se rendre sur place (règle terrain) ; les bons
+  // en attente (devis, facturation, réglés à la main) sont masqués par défaut.
+  const openOrders = useMemo(() => orders.filter((o) => needsFieldVisit(o)), [orders]);
+  const waitingOrders = useMemo(() => orders.filter((o) => isPlannable(o) && isWaiting(o)), [orders]);
+  const [showWaiting, setShowWaiting] = useState(false);
+  const mapOrders = useMemo(
+    () => (showWaiting ? [...openOrders, ...waitingOrders] : openOrders),
+    [openOrders, waitingOrders, showWaiting],
+  );
   // Centre de la carte : point choisi à la main, sinon position GPS.
   const mapCenterEffective = mapCenter || geo.position || null;
 
@@ -456,18 +464,26 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
               </div>
               {geo.error && <p className="text-xs text-amber-700">{geo.error}</p>}
               <GeocodeProgress progress={geoProgress} />
-              <p className="text-xs text-gray-500">
-                {openOrders.filter(hasCoords).length} bon{openOrders.filter(hasCoords).length > 1 ? 's' : ''} localisé{openOrders.filter(hasCoords).length > 1 ? 's' : ''} sur {openOrders.length} en cours.
-              </p>
+              <div className="flex items-center gap-3 flex-wrap text-xs text-gray-500">
+                <span>
+                  {openOrders.filter(hasCoords).length} bon{openOrders.filter(hasCoords).length > 1 ? 's' : ''} à faire localisé{openOrders.filter(hasCoords).length > 1 ? 's' : ''} sur {openOrders.length}.
+                </span>
+                {waitingOrders.length > 0 && (
+                  <label className="flex items-center gap-1.5 cursor-pointer text-gray-600">
+                    <input type="checkbox" checked={showWaiting} onChange={(e) => setShowWaiting(e.target.checked)} className="h-3.5 w-3.5 rounded border-gray-300" />
+                    Afficher aussi les {waitingOrders.length} en attente (devis, facturation)
+                  </label>
+                )}
+              </div>
               {!mapCenterEffective && (
                 <p className="text-xs text-gray-500">
                   Touche « Autour de moi » (ou un point de la carte) pour voir les bons dans le rayon.
-                  Rouge = urgent · orange = relancé · bleu = normal.
+                  Rouge = urgent · orange = relancé · bleu = à faire · gris = en attente.
                 </p>
               )}
               <Suspense fallback={<LazySpinner />}>
                 <OrdersMap
-                  orders={mapCenterEffective ? ordersWithin(openOrders, mapCenterEffective, 10000) : openOrders}
+                  orders={mapCenterEffective ? ordersWithin(mapOrders, mapCenterEffective, 10000) : mapOrders}
                   center={mapCenterEffective}
                   radiusKm={mapCenterEffective ? radiusKm : null}
                   userPosition={geo.position}
@@ -482,7 +498,7 @@ function MenuisierInterface({ embedded = false, showAllBons = false } = {}) {
                   <h3 className="font-semibold text-gray-800 mb-2 text-sm">Dans un rayon de {radiusKm} km</h3>
                   <NearbyOrders
                     origin={mapCenterEffective}
-                    orders={openOrders}
+                    orders={mapOrders}
                     radiusKm={radiusKm}
                     onRadiusChange={setRadiusKm}
                     onPick={(o) => openOrder(o.id)}

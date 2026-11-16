@@ -1,12 +1,15 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { AlertTriangle, Users, Clock, Edit } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
+import { AlertTriangle, Users, Clock, Edit, Map as MapIcon } from 'lucide-react';
 import { supabase } from '../../services/supabase';
 import { describeDbError } from '../../services/dbErrors';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   colorForMenuisier, orderToEvent, findConflicts, conflictsFor, isPlannable, hhmm, durationLabel,
-  DEFAULT_DURATION,
+  DEFAULT_DURATION, addMinutesToTime,
 } from '../../services/planningService';
+import { needsFieldVisit } from '../../services/menuiserieService';
+import { hasCoords, coordsOf, ordersWithin } from '../../services/geoUtils';
+import NearbyOrders from './NearbyOrders';
 import useOrdersRealtime from '../../hooks/useOrdersRealtime';
 import PlanningCalendar from './PlanningCalendar';
 import UnscheduledPanel from './UnscheduledPanel';
@@ -15,6 +18,9 @@ import Modal from './MenuiserieModal';
 import OrderDetail from './OrderDetail';
 import OrderSidePanel from './OrderSidePanel';
 import InterventionEditModal from './InterventionEditModal';
+
+// Mini-carte du volet « à planifier à proximité », chargée à la demande.
+const OrdersMap = lazy(() => import('./OrdersMap'));
 
 // Page « Planning » partagée : calendrier commun à tous les menuisiers,
 // géré par l'admin ET les menuisiers. Charge ses propres données, s'abonne
@@ -66,6 +72,9 @@ export default function PlanningPage({ canEdit = false, embedded = false, showDe
   const [selectedId, setSelectedId] = useState(null);
   // Admin : édition d'une intervention depuis le volet / le détail
   const [editIv, setEditIv] = useState(null); // { order, iv }
+  // Admin : « à planifier à proximité » du RDV sélectionné
+  const [nearbyRadius, setNearbyRadius] = useState(3);
+  const [includeScheduled, setIncludeScheduled] = useState(false);
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
@@ -125,9 +134,19 @@ export default function PlanningPage({ canEdit = false, embedded = false, showDe
     [orders, selectedId],
   );
   const unscheduled = useMemo(
-    () => orders.filter((o) => !o.scheduled_date && isPlannable(o) && matchesFilter(o)),
+    () => orders.filter((o) => !o.scheduled_date && needsFieldVisit(o) && matchesFilter(o)),
     [orders, matchesFilter],
   );
+  // Candidats « à la suite » : bons où il faut encore aller, sans date (ou
+  // planifiés un autre jour si demandé), hors bon sélectionné.
+  const nearbyCandidates = useMemo(() => {
+    if (!selectedOrder) return [];
+    return orders.filter((o) => o.id !== selectedOrder.id && needsFieldVisit(o)
+      && (!o.scheduled_date || (includeScheduled && o.scheduled_date !== selectedOrder.scheduled_date)));
+  }, [orders, selectedOrder, includeScheduled]);
+  const nextSlotTime = selectedOrder?.scheduled_time
+    ? addMinutesToTime(hhmm(selectedOrder.scheduled_time), selectedOrder.duration_minutes || DEFAULT_DURATION)
+    : '09:00';
 
   const showToast = (msg, kind = 'warn') => {
     setToast({ msg, kind });
@@ -267,6 +286,57 @@ export default function PlanningPage({ canEdit = false, embedded = false, showDe
             onEditIntervention={onEditIntervention
               ? (iv) => onEditIntervention(selectedOrder, iv)
               : showDetail ? (iv) => setEditIv({ order: selectedOrder, iv }) : undefined}
+            top={!embedded && canEdit && selectedOrder.scheduled_date ? (
+              <div className="mb-4 pb-4 border-b border-gray-200 space-y-2">
+                <h4 className="font-semibold text-gray-800 flex items-center gap-2">
+                  <MapIcon className="h-4 w-4 text-gray-400" /> À planifier à proximité
+                </h4>
+                {hasCoords(selectedOrder) ? (
+                  <>
+                    <p className="text-xs text-gray-500">
+                      Bons où il faut encore aller, autour de ce RDV. « À la suite » = même jour, {nextSlotTime}, même menuisier.
+                    </p>
+                    <Suspense fallback={null}>
+                      <OrdersMap
+                        orders={[selectedOrder, ...ordersWithin(nearbyCandidates, coordsOf(selectedOrder), nearbyRadius)]}
+                        center={coordsOf(selectedOrder)}
+                        radiusKm={nearbyRadius}
+                        selectedId={selectedOrder.id}
+                        className="h-44"
+                      />
+                    </Suspense>
+                    <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer">
+                      <input type="checkbox" checked={includeScheduled} onChange={(e) => setIncludeScheduled(e.target.checked)} className="h-3.5 w-3.5 rounded border-gray-300" />
+                      Inclure les bons déjà planifiés un autre jour
+                    </label>
+                    <NearbyOrders
+                      origin={coordsOf(selectedOrder)}
+                      orders={nearbyCandidates}
+                      radiusKm={nearbyRadius}
+                      onRadiusChange={setNearbyRadius}
+                      onPick={(o) => (showDetail ? setDetailOrder(o) : null)}
+                      renderAction={(o) => (
+                        <button
+                          onClick={() => openSchedule(o, {
+                            date: selectedOrder.scheduled_date,
+                            time: nextSlotTime,
+                            assignee: selectedOrder.assigned_to || '',
+                            duration: o.duration_minutes || DEFAULT_DURATION,
+                          })}
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 flex-shrink-0"
+                          title="Planifier juste après ce rendez-vous"
+                        >
+                          <Clock className="h-3.5 w-3.5" /> À la suite
+                        </button>
+                      )}
+                      emptyLabel="Rien à planifier dans ce rayon."
+                    />
+                  </>
+                ) : (
+                  <p className="text-xs text-gray-500 italic">Adresse non localisée — proximité indisponible (précise l'adresse du bon).</p>
+                )}
+              </div>
+            ) : null}
             actions={(
               <>
                 {onOpenOrder && (

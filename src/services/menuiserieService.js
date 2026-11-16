@@ -88,6 +88,53 @@ export const orderMatchesTab = (order, tab) => {
   return orderCategory(order) === tab;
 };
 
+// --- Statut « terrain » : faut-il encore se rendre sur place ? ---------------
+// Pilote la carte des menuisiers, « Autour de moi », les bons à proximité et
+// la liste « À planifier ». Règle automatique, forçable via field_status.
+export const FIELD_STATUS = {
+  auto: 'Automatique',
+  a_faire: 'À faire — toujours sur la carte',
+  en_attente: 'En attente — masqué de la carte',
+};
+// Tags de facturation posés à la main qui veulent dire « dossier au bureau »
+const WAITING_BILLING = ['devis_fait', 'en_cours_facturation', 'facture'];
+// Quelqu'un est déjà passé : cotes, photos, intervention commencée ou faite
+export const orderVisited = (order) => orderInterventions(order).some((iv) =>
+  (iv.status && iv.status !== 'todo')
+  || (iv.measurements || []).length > 0
+  || (iv.photos || []).length > 0
+  || !!iv.intervention_date
+  || !!iv.completed_date);
+export const fieldReason = (order) => {
+  if (!order) return 'termine';
+  if (order.cancelled) return 'annule';
+  if (computeOrderStatus(orderInterventions(order)) === 'completed') return 'termine';
+  if (order.field_status === 'en_attente') return 'manuel_attente';
+  if (order.field_status === 'a_faire') return 'a_faire';
+  if (orderCategory(order) === 'commande_portes') {
+    if (order.devis_valide) return 'production';
+    if (order.billing_status === 'devis_fait' || orderVisited(order)) return 'attente_devis';
+    return 'cotes';
+  }
+  if (WAITING_BILLING.includes(order.billing_status)) return 'facturation';
+  return 'a_faire';
+};
+export const FIELD_REASON_LABELS = {
+  annule: 'Annulé',
+  termine: 'Terminé',
+  manuel_attente: 'En attente (réglé à la main)',
+  facturation: 'Devis fait / facturation en cours',
+  attente_devis: 'En attente du retour de devis',
+  a_faire: 'À faire',
+  cotes: 'Cotes à prendre',
+  production: 'Devis validé — pose à prévoir',
+};
+export const fieldReasonLabel = (order) => FIELD_REASON_LABELS[fieldReason(order)] || '';
+// À afficher sur la carte / à planifier
+export const needsFieldVisit = (order) => ['a_faire', 'cotes', 'production'].includes(fieldReason(order));
+// Ouvert mais « au bureau » (devis, facturation, attente) : ni carte, ni planning
+export const isWaiting = (order) => ['manuel_attente', 'facturation', 'attente_devis'].includes(fieldReason(order));
+
 // Statuts de facturation d'un bon — parcours de la secrétaire :
 // devis à faire -> devis fait -> à facturer -> en cours de facturation -> facturé
 export const BILLING_STATUS = {

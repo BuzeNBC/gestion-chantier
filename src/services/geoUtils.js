@@ -1,5 +1,5 @@
 // Distances, rayons, couleurs de marqueurs : pur JS, sans dépendance.
-import { orderRelances, computeOrderStatus, orderInterventions } from './menuiserieService';
+import { orderRelances, computeOrderStatus, orderInterventions, needsFieldVisit } from './menuiserieService';
 
 export const RADIUS_OPTIONS = [1, 2, 3, 4, 5];
 export const DEFAULT_RADIUS_KM = 3;
@@ -49,9 +49,10 @@ export const distanceLabel = (km) => {
 
 // Code couleur des marqueurs, cohérent avec les listes :
 // rouge urgent, orange relancé, bleu normal, gris clos (terminé / annulé).
-export const MARKER_COLORS = { urgent: '#dc2626', relance: '#f97316', normal: '#2563eb', closed: '#9ca3af' };
+export const MARKER_COLORS = { urgent: '#dc2626', relance: '#f97316', normal: '#2563eb', waiting: '#94a3b8', closed: '#9ca3af' };
 export const markerKind = (o) => {
   if (o?.cancelled || computeOrderStatus(orderInterventions(o)) === 'completed') return 'closed';
+  if (!needsFieldVisit(o)) return 'waiting';
   if (o?.is_urgent) return 'urgent';
   if (orderRelances(o).length > 0) return 'relance';
   return 'normal';

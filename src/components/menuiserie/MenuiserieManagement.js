@@ -11,7 +11,7 @@ import { hasCoords, coordsOf, ordersWithin, needsGeocoding, geocodingFailed } fr
 import {
   geocodeOne, geocodePatch, geocodeFailPatch, geocodeClearPatch, backfillGeocoding,
 } from '../../services/geocodingService';
-import { isPlannable, addMinutesToTime } from '../../services/planningService';
+import { addMinutesToTime } from '../../services/planningService';
 import Modal from './MenuiserieModal';
 import ScheduleModal from './ScheduleModal';
 import OrderDetail from './OrderDetail';
@@ -35,6 +35,7 @@ import {
   sortInterventionOptions, MENUISERIE_TABS, orderMatchesTab, orderFactureMonth,
   relanceBadgeStyle, relanceBorderStyle, orderRelances, newRelance,
   orderTotalHt, fmtEuro, directionsUrls, orderPhones, extractPhones,
+  FIELD_STATUS, fieldReasonLabel, needsFieldVisit, isWaiting,
 } from '../../services/menuiserieService';
 import { exportMonthCsv, exportMonthPdf, monthLabel } from '../../services/menuiserieExport';
 import InterventionLinesEditor from './InterventionLinesEditor';
@@ -74,6 +75,14 @@ const RowActionsMenu = ({ order, actions }) => {
             <AlertTriangle className="h-4 w-4" /> {order.is_urgent ? "Retirer l'urgence" : 'Marquer urgent'}
           </button>
         </MenuItem>
+        {!order.cancelled && (
+          <MenuItem>
+            <button onClick={() => actions.setFieldStatus(order, order.field_status === 'en_attente' ? 'auto' : 'en_attente')} className={`${menuItemClass} text-gray-700`}>
+              <MapPinOff className="h-4 w-4" />
+              {order.field_status === 'en_attente' ? 'Remettre sur la carte (automatique)' : 'Masquer de la carte (en attente)'}
+            </button>
+          </MenuItem>
+        )}
         {isChantierNeuf && (
           <MenuItem>
             <button onClick={() => actions.devisValide(order)} className={`${menuItemClass} text-teal-700`}>
@@ -130,6 +139,7 @@ const emptyForm = {
   received_date: '',
   devis_valide: false,
   devis_valide_date: '',
+  field_status: 'auto',
   // Géolocalisation (remplie par l'autocomplétion ou au submit)
   latitude: null,
   longitude: null,
@@ -277,6 +287,7 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
     received_date: order.received_date || '',
     devis_valide: !!order.devis_valide,
     devis_valide_date: order.devis_valide_date || '',
+    field_status: order.field_status || 'auto',
     ...geoFieldsFrom(order),
   } : {
     ...emptyForm,
@@ -617,6 +628,19 @@ const OrderForm = ({ order, menuisiers, interventionOptions, chargeAffaireOption
               <option key={v} value={v}>{l}</option>
             ))}
           </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Terrain (carte menuisier)</label>
+          <select
+            value={form.field_status}
+            onChange={(e) => set('field_status', e.target.value)}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+          >
+            {Object.entries(FIELD_STATUS).map(([v, l]) => (
+              <option key={v} value={v}>{l}</option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-500 mt-1">Automatique : masqué si terminé, annulé, devis fait / en attente de devis.</p>
         </div>
       </div>
 
@@ -1117,6 +1141,8 @@ function MenuiserieManagement() {
   const [category, setCategory] = useState('petites_interventions');
   // Rayon du modal « Bons proches à planifier »
   const [nearbyRadius, setNearbyRadius] = useState(5);
+  // Carte admin : afficher aussi les bons « en attente » (masqués par défaut)
+  const [mapShowWaiting, setMapShowWaiting] = useState(false);
   // 'failed' : n'afficher que les bons dont l'adresse n'a pas pu être localisée
   // (toutes sous-sections confondues), pour les corriger.
   const [geoFilter, setGeoFilter] = useState('all');
@@ -1219,7 +1245,7 @@ function MenuiserieManagement() {
   // propose les bons proches encore à planifier (regroupement de la tournée).
   const afterSave = (saved) => {
     if (saved.scheduled_date && hasCoords(saved) && !saved.cancelled) {
-      const candidates = orders.filter((o) => o.id !== saved.id && isPlannable(o) && !o.scheduled_date);
+      const candidates = orders.filter((o) => o.id !== saved.id && needsFieldVisit(o) && !o.scheduled_date);
       if (ordersWithin(candidates, coordsOf(saved), 5).length > 0) {
         setModal({ type: 'nearby', data: saved });
         return;
@@ -1335,6 +1361,21 @@ function MenuiserieManagement() {
     } catch (error) {
       console.error('Erreur annulation bon:', error);
       alert(`Erreur lors de l'annulation du bon — ${describeDbError(error)}`);
+    }
+  };
+
+  // Réglage « terrain » (affichage sur la carte des menuisiers) depuis le menu ⋯.
+  const setFieldStatus = async (order, value) => {
+    try {
+      const { error } = await supabase
+        .from('menuiserie_orders')
+        .update({ field_status: value })
+        .eq('id', order.id);
+      if (error) throw error;
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, field_status: value } : o)));
+    } catch (error) {
+      console.error('Erreur statut terrain:', error);
+      alert(`Erreur lors du réglage — ${describeDbError(error)}`);
     }
   };
 
@@ -1689,6 +1730,11 @@ function MenuiserieManagement() {
                   </span>
                 )}
                 <CallBadge order={order} />
+                {!order.cancelled && isWaiting(order) && (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-700" title="Masqué de la carte des menuisiers">
+                    <MapPinOff className="h-3 w-3" /> {fieldReasonLabel(order)}
+                  </span>
+                )}
                 {ivs.length > 1 && (
                   <span className="text-xs text-gray-500">
                     {completedCount}/{ivs.length} interventions
@@ -1788,6 +1834,7 @@ function MenuiserieManagement() {
                   billing: (o) => setModal({ type: 'billing', data: o }),
                   relances: (o) => setModal({ type: 'relances', data: o }),
                   toggleUrgent,
+                  setFieldStatus,
                   devisValide: (o) => setModal({ type: 'devis_valide', data: o }),
                   cancel: (o) => setModal({ type: 'cancel', data: o }),
                   remove: (o) => handleDelete(o.id),
@@ -1849,7 +1896,7 @@ function MenuiserieManagement() {
           </p>
           <NearbyOrders
             origin={coordsOf(modal.data)}
-            orders={orders.filter((o) => o.id !== modal.data.id && isPlannable(o) && !o.scheduled_date)}
+            orders={orders.filter((o) => o.id !== modal.data.id && needsFieldVisit(o) && !o.scheduled_date)}
             radiusKm={nearbyRadius}
             onRadiusChange={setNearbyRadius}
             onPick={(o) => setModal({ type: 'detail', data: o })}
@@ -1889,7 +1936,7 @@ function MenuiserieManagement() {
             <div className="flex-1 min-w-0 w-full">
               <Suspense fallback={<div className="h-[70vh] flex items-center justify-center"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" /></div>}>
                 <OrdersMap
-                  orders={categoryOrders}
+                  orders={categoryOrders.filter((o) => !o.cancelled && (mapShowWaiting || isClosedTab || needsFieldVisit(o)))}
                   fit
                   selectedId={modal.selectedId || null}
                   onSelect={(o) => setModal((m) => ({ ...m, selectedId: o.id }))}
@@ -1922,10 +1969,16 @@ function MenuiserieManagement() {
               />
             )}
           </div>
-          <p className="text-xs text-gray-500 mt-2">
-            Rouge = urgent · orange = relancé · bleu = normal · gris = clos.
-            {' '}{categoryOrders.filter((o) => o.address && !hasCoords(o)).length} bon(s) de cet onglet sans position.
-          </p>
+          <div className="flex items-center gap-3 flex-wrap text-xs text-gray-500 mt-2">
+            <span>Rouge = urgent · orange = relancé · bleu = à faire · gris = en attente / clos. Les annulés ne sont jamais affichés.</span>
+            {!isClosedTab && categoryOrders.some((o) => isWaiting(o)) && (
+              <label className="flex items-center gap-1.5 cursor-pointer text-gray-600">
+                <input type="checkbox" checked={mapShowWaiting} onChange={(e) => setMapShowWaiting(e.target.checked)} className="h-3.5 w-3.5 rounded border-gray-300" />
+                Afficher aussi les {categoryOrders.filter((o) => isWaiting(o)).length} en attente
+              </label>
+            )}
+            <span>{categoryOrders.filter((o) => o.address && !hasCoords(o)).length} bon(s) de cet onglet sans position.</span>
+          </div>
         </Modal>
       )}
       {modal.type === 'edit_iv' && (
